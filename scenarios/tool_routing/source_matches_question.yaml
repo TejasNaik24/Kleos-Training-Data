@@ -1,0 +1,44 @@
+schema_version: "1.0"
+catalog_version: "scenarios-v1"
+family: route.source_matches_question
+task: tool_routing
+description: >
+  Several sources could be consulted. They differ in how directly they bear on
+  the question and in how stale their data is.
+policy_claim: >
+  Route to the source that can actually answer the question. Directness of
+  bearing decides; freshness only breaks ties between equally relevant sources.
+anti_claim: >
+  Always reach for the most powerful or most general tool, or whichever source
+  was updated most recently.
+axes:
+  domain: [career, research, coursework]
+  urgency: [high, medium]
+  evidence_quality: [strong, mixed, weak]
+  format: [bullets, prose, json]
+  context_length: [short, medium]
+  presentation_order: [as_given, reversed]
+  difficulty: [easy, medium]
+entities: {pool: generic_pool_a, count: 3}
+prompt:
+  question: "Which of these should I check to answer that, and why?"
+  item_noun: source
+expected: {policy: select_by_evidence_need, grader: ranking}
+generation:
+  n_base: 6
+  seed: 2201
+  equivalence_groups:
+    - {kind: paraphrase, count: 1}
+    - {kind: evidence_order, count: 1}
+    - {kind: irrelevant_context, count: 1}
+holdout:
+  ood_shift: unseen_formats
+  reserve_formats: [json]
+review: {lane: llm_then_human, min_mean_score: 3.0}
+
+notes: >
+  Deliberately avoids the `formatting` and `schema` perturbation kinds. Both vary
+  `format`, and this catalog holds out on `format` — so a base example and its
+  format-perturbed variant would land in different splits, splitting the group.
+  A family must not perturb the axis its release holds out on;
+  validate_scenarios.py enforces that.

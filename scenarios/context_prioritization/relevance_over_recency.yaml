@@ -1,0 +1,44 @@
+schema_version: "1.0"
+catalog_version: "scenarios-v1"
+family: ctx.relevance_over_recency
+task: context_prioritization
+description: >
+  More context is available than fits. The fragments differ in how relevant they
+  are to the question and in how recently they were touched.
+policy_claim: >
+  Keep the context that bears on the question. Recency only breaks ties between
+  fragments of equal relevance — a fresh irrelevant note displaces a useful one.
+anti_claim: >
+  Keep whatever was touched most recently, on the assumption that newer context
+  is more useful.
+axes:
+  domain: [career, research, coursework]
+  urgency: [high, medium]
+  evidence_quality: [strong, mixed, weak]
+  format: [bullets, prose, json]
+  context_length: [medium, long]
+  presentation_order: [as_given, reversed]
+  ambiguity: [low, medium]
+entities: {pool: generic_pool_a, count: 4}
+prompt:
+  question: "Which of these should I keep in context, and why?"
+  item_noun: fragment
+expected: {policy: rank_by_relevance_over_recency, grader: ranking}
+generation:
+  n_base: 6
+  seed: 4423
+  equivalence_groups:
+    - {kind: paraphrase, count: 1}
+    - {kind: evidence_order, count: 1}
+    - {kind: length, count: 1}
+holdout:
+  ood_shift: reordered_evidence
+  reserve_formats: [json]
+review: {lane: llm_then_human, min_mean_score: 3.0}
+
+notes: >
+  Deliberately avoids the `formatting` and `schema` perturbation kinds. Both vary
+  `format`, and this catalog holds out on `format` — so a base example and its
+  format-perturbed variant would land in different splits, splitting the group.
+  A family must not perturb the axis its release holds out on;
+  validate_scenarios.py enforces that.

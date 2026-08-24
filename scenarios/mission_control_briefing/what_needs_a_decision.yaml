@@ -1,0 +1,37 @@
+schema_version: "1.0"
+catalog_version: "scenarios-v1"
+family: brief.what_needs_a_decision
+task: mission_control_briefing
+description: >
+  Several things changed since the last briefing. Only some of them need the
+  reader to decide anything.
+policy_claim: >
+  Lead a briefing with what needs a decision soonest and is best supported.
+  Everything else is context, and context goes after the decision.
+anti_claim: >
+  Report everything that changed, in the order it arrived, giving equal weight
+  to items that need nothing from the reader.
+axes:
+  domain: [career, research, coursework, projects]
+  urgency: [critical, high, medium]
+  evidence_quality: [strong, mixed]
+  format: [bullets, prose, json]
+  context_length: [medium, long]
+  presentation_order: [as_given, reversed]
+  difficulty: [easy, medium]
+entities: {pool: generic_pool_a, count: 4}
+prompt:
+  question: "What should lead the briefing, and what can wait?"
+  item_noun: update
+expected: {policy: rank_by_deadline_then_evidence, grader: ranking}
+generation:
+  n_base: 6
+  seed: 3312
+  equivalence_groups:
+    - {kind: paraphrase, count: 1}
+    - {kind: context_order, count: 1}
+    - {kind: length, count: 1}
+holdout:
+  ood_shift: context_length_shift
+  reserve_formats: [json]
+review: {lane: llm_then_human, min_mean_score: 3.0}

@@ -1,0 +1,153 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "kleos-training-data"
+version = "0.1.0"
+description = "Private collection, review, sanitization and release pipeline for KLEOS training datasets"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{ name = "KLEOS Research" }]
+keywords = ["dataset", "privacy", "sanitization", "provenance", "reproducibility"]
+classifiers = [
+  "Private :: Do Not Upload",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Intended Audience :: Science/Research",
+]
+
+# Core dependencies are deliberately light, and deliberately do NOT include
+# kleos-models.
+#
+# This repository must build, test and produce a release with the public repo
+# absent from the machine entirely. kleos-models is a compatibility *test*
+# dependency (the `compat` extra), never a runtime one — see docs/compatibility.md
+# and contract/pin.py. The public repo's docs/privacy.md states "Neither
+# repository imports the other"; the contract mirror in
+# src/kleos_training_data/contract/ is how we honour that without guessing at
+# the contract.
+dependencies = [
+  "pydantic>=2.7,<3",
+  "PyYAML>=6.0",
+  "jsonschema>=4.21",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+  "pytest-cov>=5.0",
+  "ruff>=0.6",
+  "mypy>=1.11",
+  "types-PyYAML",
+]
+# Only the real-backend adapters need an HTTP client. The mock adapter, and
+# therefore the entire offline pipeline and test suite, needs nothing.
+collect = [
+  "httpx>=0.27",
+]
+# Only the real LLM reviewer. MockReviewer is deterministic and dependency-free,
+# and it is what CI uses.
+review = [
+  "anthropic>=0.40",
+]
+# The pinned public contract, installed ONLY to run differential tests against.
+# Pinned to a commit, never a branch: a floating dependency would let the public
+# contract change underneath a release without any test failing.
+compat = [
+  "kleos-models @ git+https://github.com/TejasNaik24/Kleos-Models.git@12361d53cf329c897ec14daede6d14112a3e8f20",
+]
+all = [
+  "kleos-training-data[dev,collect,review]",
+]
+
+# NOTE: deliberately no [project.scripts]. The public repo declares a `kleos`
+# console script pointing at a module that does not exist; the scripts here are
+# invoked as `python scripts/<name>.py` and are tested that way.
+
+[project.urls]
+Homepage = "https://github.com/TejasNaik24/Kleos-Training-Data"
+
+[tool.hatch.metadata]
+# Required for the `compat` extra, which pins kleos-models to an exact commit
+# via a git URL. A direct reference is the point: a version range would let the
+# public contract change underneath a release without any test failing.
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/kleos_training_data"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests", "scripts"]
+
+[tool.ruff.lint]
+select = [
+  "E",   # pycodestyle errors
+  "W",   # pycodestyle warnings
+  "F",   # pyflakes
+  "I",   # isort
+  "B",   # flake8-bugbear
+  "C4",  # comprehensions
+  "UP",  # pyupgrade
+  "SIM", # simplify
+  "RUF", # ruff-specific
+]
+ignore = [
+  "E501",   # line length is handled by the formatter
+  "B008",   # function call in default argument
+  "SIM108", # ternary operators are not always clearer
+  # `class X(str, Enum)` is deliberate: it keeps enum members JSON-serializable
+  # and comparable to plain strings, which pydantic and the record writers both
+  # rely on. StrEnum would work on 3.11+ but changes `str()` semantics.
+  "UP042",
+  # Report text and prose use real typography (x for dimensions, en dashes in
+  # ranges, em dashes in sentences). These are human-facing strings and
+  # docstrings, not identifiers. RUF002 is the docstring variant of RUF001; the
+  # public repo ignores the other two for the same reason.
+  "RUF001",
+  "RUF002",
+  "RUF003",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B011"]
+"scripts/*" = ["E402"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["kleos_training_data"]
+
+[tool.mypy]
+# 3.12 rather than 3.11 to match the public repo's setting, so a module ported
+# between the two type-checks identically. Runtime support is 3.11+, enforced by
+# `requires-python` and the CI test matrix.
+python_version = "3.12"
+files = ["src/kleos_training_data"]
+ignore_missing_imports = true
+warn_unused_configs = true
+warn_redundant_casts = true
+no_implicit_optional = true
+check_untyped_defs = true
+disable_error_code = ["import-untyped"]
+
+[[tool.mypy.overrides]]
+module = ["kleos_models.*", "httpx.*", "anthropic.*"]
+ignore_missing_imports = true
+follow_imports = "skip"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# "." as well as "src": test modules import shared helpers via
+# `from tests.conftest import ...`, which needs the repository root importable.
+# `python -m pytest` happens to add the working directory to sys.path, but bare
+# `pytest` does not — so without this, tests pass locally and fail collection in
+# CI with "No module named 'tests'".
+pythonpath = ["src", "."]
+addopts = "-ra --strict-markers"
+markers = [
+  "requires_kleos_models: differential test needing the pinned public package (skipped otherwise)",
+  "requires_network: test performs real network I/O (never run in CI)",
+  "slow: end-to-end test running the full pipeline",
+]

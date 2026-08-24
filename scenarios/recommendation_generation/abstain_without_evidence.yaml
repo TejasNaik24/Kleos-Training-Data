@@ -1,0 +1,41 @@
+schema_version: "1.0"
+catalog_version: "scenarios-v1"
+family: rec.abstain_without_evidence
+task: recommendation_generation
+description: >
+  Candidate next actions, some well supported and some not. Sometimes no option
+  is separated from the others by anything the evidence actually shows.
+policy_claim: >
+  Recommend the action the evidence supports. When the top options are separated
+  by less than the uncertainty in that evidence, say so and name what would
+  resolve it, instead of producing a confident recommendation anyway.
+anti_claim: >
+  Always produce a confident recommendation, because a recommendation is what
+  was asked for.
+axes:
+  domain: [career, research, coursework, projects]
+  urgency: [high, medium, low]
+  evidence_quality: [weak, mixed]
+  format: [bullets, prose, json]
+  context_length: [short, medium]
+  ambiguity: [medium, high]
+  difficulty: [medium]
+entities: {pool: generic_pool_a, count: 3}
+prompt:
+  question: "What should I do next?"
+  item_noun: option
+expected: {policy: rank_or_abstain_when_close, grader: ranking}
+generation:
+  n_base: 6
+  seed: 5534
+  equivalence_groups:
+    - {kind: paraphrase, count: 1}
+    - {kind: irrelevant_context, count: 1}
+holdout:
+  ood_shift: unseen_formats
+  reserve_formats: [json]
+review: {lane: llm_then_human, min_mean_score: 3.0}
+notes: >
+  The abstention family. Deliberately weighted toward weak evidence and high
+  ambiguity, because a corpus of only clean decisions teaches that a decision is
+  always available.

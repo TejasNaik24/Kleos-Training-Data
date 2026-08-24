@@ -1,0 +1,39 @@
+schema_version: "1.0"
+catalog_version: "scenarios-v1"
+family: mem.reliability_over_recency
+task: memory_conflict_resolution
+description: >
+  Two or more stored records disagree. They differ in how well supported each is
+  and in how recently each was written.
+policy_claim: >
+  When stored records conflict, prefer the better-supported one. Recency decides
+  only when the records are equally well supported.
+anti_claim: >
+  Always trust the most recent record, because newer information supersedes
+  older information.
+axes:
+  domain: [career, research, coursework]
+  urgency: [high, medium]
+  evidence_quality: [conflicting, mixed]
+  conflicting_evidence: [moderate, strong]
+  format: [bullets, prose, json]
+  presentation_order: [as_given, reversed]
+  difficulty: [medium]
+entities: {pool: generic_pool_a, count: 3}
+prompt:
+  question: "These disagree. Which should I treat as current, and why?"
+  item_noun: record
+expected: {policy: rank_by_reliability_over_recency, grader: ranking}
+generation:
+  n_base: 6
+  seed: 6645
+  equivalence_groups:
+    - {kind: paraphrase, count: 1}
+    - {kind: evidence_order, count: 1}
+holdout:
+  ood_shift: conflicting_evidence
+  reserve_formats: [json]
+review: {lane: llm_then_human, min_mean_score: 3.0}
+notes: >
+  The deliberate inverse of the recency heuristic. A model that learned "prefer
+  the newer record" as a surface rule fails this family, which is the point.

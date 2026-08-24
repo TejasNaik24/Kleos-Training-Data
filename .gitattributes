@@ -1,0 +1,20 @@
+# Normalize line endings so a content hash computed on macOS matches one
+# computed in CI. The whole identity scheme depends on this.
+* text=auto eol=lf
+
+*.py    text
+*.md    text
+*.yaml  text
+*.yml   text
+*.json  text
+*.jsonl text
+*.txt   text
+
+Makefile text
+
+# Never diff or merge these as text.
+*.safetensors binary
+*.bin         binary
+*.png         binary
+*.jpg         binary
+*.pdf         binary

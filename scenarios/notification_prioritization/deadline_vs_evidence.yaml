@@ -1,0 +1,78 @@
+schema_version: "1.0"
+catalog_version: "scenarios-v1"
+
+family: notif.deadline_vs_evidence
+task: notification_prioritization
+
+description: >
+  Several items compete for attention with different deadlines, different
+  strengths of evidence behind them, and different consequences if they slip.
+  The correct ranking follows expected cost of delay, not any single surface
+  signal.
+
+# What an example from this family teaches. Stated as a rule, so it transfers to
+# a situation with entirely different entities.
+policy_claim: >
+  Rank by where delay costs the most: nearness of deadline, discounted by how
+  well the claim is actually supported and by how much the outcome matters. Name
+  the factor that decided it.
+
+# The surface rule a lazy model might learn instead. This is what the
+# perturbations and holdouts are built to catch — a model that learned any of
+# these will pass the easy cases and fail the reordered, reformatted and
+# unseen-entity ones.
+anti_claim: >
+  Pick whichever item is listed first, or whichever has the nearest date
+  regardless of whether anyone has verified it.
+
+axes:
+  domain: [career, research, coursework, projects]
+  urgency: [critical, high, medium]
+  evidence_quality: [strong, mixed, weak]
+  format: [bullets, prose, json]
+  context_length: [short, medium]
+  presentation_order: [as_given, reversed]
+  difficulty: [easy, medium]
+  ambiguity: [low, medium]
+
+entities:
+  pool: generic_pool_a
+  count: 3
+
+expected:
+  policy: rank_by_deadline_then_evidence
+  grader: ranking
+
+generation:
+  n_base: 6
+  seed: 1712
+  sampling: stratified
+  # Each of these must leave the decision unchanged. validate_scenarios.py
+  # generates every one and compares the computed decision against the base;
+  # a perturbation that changes the answer fails the scenario rather than
+  # quietly producing an equivalence group whose members disagree.
+  equivalence_groups:
+    - kind: paraphrase
+      count: 1
+    - kind: evidence_order
+      count: 1
+    - kind: irrelevant_context
+      count: 1
+
+holdout:
+  # Test-split examples use entities the model has never seen, so a correct
+  # answer cannot come from having memorized a name.
+  ood_shift: unseen_entities
+  reserve_entity_pools: [generic_pool_z]
+  # json is held out as a format so we can ask whether the policy survives a
+  # presentation the model was never trained on.
+  reserve_formats: [json]
+
+review:
+  lane: llm_then_human
+  min_mean_score: 3.0
+
+notes: >
+  The seed family. Deliberately the simplest case in the catalog: if the
+  pipeline cannot produce a defensible example here, the harder families are not
+  worth generating yet.

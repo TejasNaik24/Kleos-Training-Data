@@ -1,0 +1,23 @@
+# Fictional names RESERVED FOR THE OOD TEST SPLIT.
+#
+# Nothing drawn from this pool may appear in training data. Scenarios that
+# reserve it declare `holdout.reserve_entity_pools: [generic_pool_z]`, and
+# `resolve_holdouts()` turns that declaration into the explicit holdout_values
+# passed to the entity-holdout splitter.
+#
+# Kept lexically distinct from generic_pool_a so a near-duplicate check cannot
+# confuse a held-out entity with a seen one.
+kind: project
+values:
+  - Quillon
+  - Verdance
+  - Umbral
+  - Zephyrine
+  - Oxbow
+  - Ironvale
+  - Nettlefold
+  - Yarrowmere
+  - Cindermark
+  - Palisade
+  - Wraithwood
+  - Gossamer

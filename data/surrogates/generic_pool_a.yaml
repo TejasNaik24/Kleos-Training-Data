@@ -1,0 +1,26 @@
+# Fictional project and workstream names.
+#
+# Every value here is invented. Nothing in this file refers to a real
+# organization, product or person — see PRIVACY.md, "Fixture policy".
+#
+# Names are deliberately bland and interchangeable. A memorable name is a name a
+# model can memorize, and the whole point of a surrogate is that it carries no
+# information about anybody.
+kind: project
+values:
+  - Northwind
+  - Blue Harbor
+  - Fieldstone
+  - Copperline
+  - Redpine
+  - Talus
+  - Marchwood
+  - Silverbrook
+  - Kestrel
+  - Ashford
+  - Longmere
+  - Brightwater
+  - Halvard
+  - Windrow
+  - Stonegate
+  - Fernbank
