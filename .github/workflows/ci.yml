@@ -123,6 +123,12 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -e ".[dev]"
+      # A fresh checkout has never had init_workspace.py secure the vault, and
+      # git does not track directory permissions — so the vault genuinely is
+      # group/world-readable until this runs. slice-clean calls it too, but
+      # running it here first means doctor.py's check reflects the workspace
+      # this repo actually maintains, not a checkout nobody has initialized yet.
+      - run: python scripts/init_workspace.py
       # The environment diagnostic must not print a secret value. It reports
       # presence only, so it is safe to run in a public log.
       - run: python scripts/doctor.py
