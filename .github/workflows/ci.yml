@@ -122,7 +122,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install -e ".[dev]"
+      # `make slice-clean slice` shells out to `.venv/bin/python` (the same
+      # layout local development uses), so this job needs the venv to exist —
+      # a plain `pip install` into the runner's interpreter leaves that path
+      # missing and every make target in this job fails immediately.
+      - run: make install
+      - run: echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
       # A fresh checkout has never had init_workspace.py secure the vault, and
       # git does not track directory permissions — so the vault genuinely is
       # group/world-readable until this runs. slice-clean calls it too, but
