@@ -21,6 +21,7 @@ axes:
   difficulty: [easy, medium]
 entities: {pool: generic_pool_a, count: 4}
 prompt:
+  framing: briefing
   question: "What should lead the briefing, and what can wait?"
   item_noun: update
 expected: {policy: rank_by_deadline_then_evidence, grader: ranking}

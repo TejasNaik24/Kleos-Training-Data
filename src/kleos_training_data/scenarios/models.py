@@ -126,6 +126,51 @@ class PromptSpec(StrictModel):
     )
     #: What the items represent, for the renderer's framing.
     item_noun: str = "item"
+    #: Which registered framing renders this family. The framing decides what
+    #: the items *are* — competing work, candidate sources, stored records — and
+    #: therefore the system instruction, the nouns, and whether the number on an
+    #: item reads as a due date, a record age or a sync staleness.
+    framing: str = "priority"
+    #: The information need, stated before the items. Required by framings whose
+    #: question refers back to one: "which of these should I check to answer
+    #: that" has no antecedent without it.
+    need: str = ""
+    #: Names for the active workspace, cycled per point by the workspace
+    #: framing. Fictional, and never a real workspace belonging to anyone.
+    workspace_names: list[str] = Field(default_factory=list)
+    #: How many items sit outside the active workspace. Only the workspace
+    #: framing uses it; it must leave at least one item in scope, or there is no
+    #: in-scope answer to give.
+    out_of_scope_count: int = Field(default=0, ge=0, le=4)
+    #: When true, the material outside the active workspace is the *better
+    #: supported* material and everything inside it is too weak to act on.
+    #:
+    #: This is what makes "the active workspace cannot answer this" a real
+    #: situation rather than an assertion. Without it, a family claiming to teach
+    #: "ask before crossing a boundary" has nothing worth crossing for, and its
+    #: examples resolve as ordinary ranking — which is exactly what happened to
+    #: wsp.absent_in_active in v0.0.2.
+    out_of_scope_stronger: bool = False
+    #: Declares that the *request* is referentially underspecified. Distinct from
+    #: weak evidence: the user has not said what they are asking about, so the
+    #: correct move is to ask what they mean rather than to go and verify
+    #: something.
+    request_ambiguous: bool = False
+    #: Constructs Decision B's legislated case: the explicit record is older than
+    #: ``STALE_AFTER_DAYS`` and a newer record is corroborated well enough to
+    #: challenge it. Without this the case depends on a lucky hash draw and the
+    #: v0.0.5 corpus contained zero instances of the situation the decision is
+    #: actually about.
+    stale_explicit_conflict: bool = False
+
+    @field_validator("framing")
+    @classmethod
+    def _known_framing(cls, value: str) -> str:
+        from kleos_training_data.scenarios.situations import FRAMINGS
+
+        if value not in FRAMINGS:
+            raise ValueError(f"unknown framing {value!r}; registered: {sorted(FRAMINGS)}")
+        return value
 
 
 class ExpectedSpec(StrictModel):
@@ -214,6 +259,45 @@ class Scenario(StrictModel):
 
         for empty in sorted(k for k, v in self.axes.items() if not v):
             raise ValueError(f"axis {empty!r} has no values; remove it or give it one")
+
+        if self.prompt.framing == "workspace":
+            if not self.prompt.workspace_names:
+                raise ValueError(
+                    "the workspace framing needs `prompt.workspace_names` — a prompt "
+                    "that says 'only in the workspace I named' while naming no "
+                    "workspace has no stated correct answer"
+                )
+            # The rendered workspace is now taken from the `workspace` axis, so
+            # the axis has to exist and has to carry the names the prompt will
+            # show. Without this the two drift apart silently, which is exactly
+            # what produced 338 examples whose metadata described a different
+            # workspace than their own prompt.
+            declared = self.axes.get("workspace")
+            if not declared:
+                raise ValueError(
+                    "a workspace-framed scenario must declare a `workspace` axis; the "
+                    "rendered workspace name is taken from it, so the metadata and the "
+                    "prompt cannot disagree"
+                )
+            unknown = sorted(set(declared) - set(self.prompt.workspace_names))
+            if unknown:
+                raise ValueError(
+                    f"axes.workspace values {unknown} are not in "
+                    f"prompt.workspace_names {self.prompt.workspace_names}; the axis "
+                    f"value is what the prompt renders, so every value must be a real "
+                    f"workspace name"
+                )
+            if self.prompt.out_of_scope_count >= self.entities.count:
+                raise ValueError(
+                    f"out_of_scope_count={self.prompt.out_of_scope_count} leaves no "
+                    f"item inside the active workspace (entities.count="
+                    f"{self.entities.count}); there would be nothing to answer with"
+                )
+        elif self.prompt.out_of_scope_count:
+            raise ValueError(
+                f"out_of_scope_count is set but framing is {self.prompt.framing!r}; "
+                f"only the workspace framing marks items out of scope"
+            )
         return self
 
     @property

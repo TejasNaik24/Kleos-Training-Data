@@ -1,0 +1,20 @@
+# Fictional sources RESERVED FOR THE OOD TEST SPLIT.
+#
+# Nothing drawn from this pool may appear in training data. Kept lexically
+# distinct from source_pool_a so a near-duplicate check cannot confuse a held-out
+# source with a seen one, and so an unseen-entity test asks whether the routing
+# policy transfers to a source the model has never been told about.
+kind: source
+values:
+  - the archive index
+  - the handover document
+  - the intake form
+  - the escalation log
+  - the retrospective board
+  - the vendor portal
+  - the compliance register
+  - the onboarding packet
+  - the roadmap snapshot
+  - the incident timeline
+  - the budget tracker
+  - the access request queue

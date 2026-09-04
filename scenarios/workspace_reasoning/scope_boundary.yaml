@@ -15,12 +15,15 @@ axes:
   domain: [career, research, projects]
   urgency: [high, medium]
   evidence_quality: [strong, mixed]
-  workspace: [primary, shared]
+  workspace: [School, Research, Personal, Startup]
   format: [bullets, prose, json]
   presentation_order: [as_given, reversed]
   difficulty: [easy, medium]
 entities: {pool: generic_pool_a, count: 3}
 prompt:
+  framing: workspace
+  workspace_names: [School, Research, Personal, Startup]
+  out_of_scope_count: 1
   question: "Working only in the workspace I named — what should I do first?"
   item_noun: item
 expected: {policy: respect_workspace_scope, grader: ranking}

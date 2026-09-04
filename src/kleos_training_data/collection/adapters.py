@@ -224,6 +224,13 @@ class MockBackendAdapter:
 
         # Deterministic capture id: re-running a batch must not produce a new
         # file for identical content, or staging fills with near-duplicates.
+        #
+        # The prompt itself is in the seed, and has to be. Keying on the axes
+        # alone collided for every perturbation that changes the *text* without
+        # changing an axis value — paraphrase, irrelevant_context and length all
+        # do — so the two members of any `count: 2` paraphrase group produced
+        # one capture_id, and the second silently overwrote the first on disk.
+        # A 1152-request batch landed 948 files while reporting 1152 captured.
         seed = canonical_hash(
             {
                 "batch": batch_id,
@@ -232,6 +239,8 @@ class MockBackendAdapter:
                 "kind": request.perturbation_kind,
                 "of": request.perturbation_of,
                 "axes": request.variation_axes,
+                "system": request.system_prompt,
+                "user": request.user_message,
             }
         )
         capture_id = str(uuid.UUID(seed[:32]))

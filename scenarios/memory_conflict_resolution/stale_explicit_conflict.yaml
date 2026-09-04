@@ -1,0 +1,53 @@
+schema_version: "1.0"
+catalog_version: "scenarios-v1"
+family: mem.stale_explicit_conflict
+task: memory_conflict_resolution
+description: >
+  An explicit statement the user made over a month ago is contradicted by a
+  recent, corroborated record. This is the case Decision B legislates for and
+  which no release before v0.0.6 contained a single example of.
+policy_claim: >
+  An explicit statement keeps priority, but when it is clearly stale and newer
+  corroborated evidence conflicts with it, surface the conflict and ask rather
+  than silently asserting the old statement or silently overwriting it.
+anti_claim: >
+  An explicit statement wins forever, so a preference stated once can never be
+  revisited however much later evidence disagrees.
+axes:
+  domain: [career, research, coursework, projects]
+  urgency: [low, medium]
+  evidence_quality: [strong, mixed]
+  conflicting_evidence: [strong]
+  format: [bullets, prose, json]
+  context_length: [short, medium]
+  presentation_order: [as_given, reversed]
+  ambiguity: [medium, high]
+entities: {pool: generic_pool_a, count: 3}
+prompt:
+  framing: memory
+  need: >-
+    You have something on file about how I like to work that I do not think is
+    true any more.
+  stale_explicit_conflict: true
+  question: "Which of these should you be acting on?"
+  item_noun: record
+expected: {policy: defer_to_explicit_statement, grader: ranking}
+generation:
+  n_base: 16
+  seed: 3907
+  equivalence_groups:
+    - {kind: paraphrase, count: 2}
+    - {kind: evidence_order, count: 1}
+holdout:
+  ood_shift: conflicting_evidence
+  reserve_formats: [json]
+review: {lane: human_only, min_mean_score: 3.5}
+notes: >
+  Added in v0.0.6. Decision B was recorded after the v0.0.3 review but named no
+  thresholds, so the case could not be generated and the corpus contained zero
+  instances of it — the policy was described rather than exercised.
+  STALE_AFTER_DAYS (30) and STRONG_CONFLICT_MIN_EVIDENCE (corroborated) make the
+  boundary deterministic, and this family constructs situations on the far side
+  of it. Boundary cases on the near side are covered by
+  mem.explicit_over_inferred, whose newer records are single_source and therefore
+  correctly do not trigger surfacing.

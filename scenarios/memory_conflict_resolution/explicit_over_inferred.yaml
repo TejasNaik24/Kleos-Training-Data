@@ -1,0 +1,49 @@
+schema_version: "1.0"
+catalog_version: "scenarios-v1"
+family: mem.explicit_over_inferred
+task: memory_conflict_resolution
+description: >
+  A record the user stated outright conflicts with one the system inferred from
+  behaviour. The inference is often newer and sometimes better corroborated
+  across sources.
+policy_claim: >
+  An explicit statement from the user outranks an inference, however recent and
+  however well corroborated. Behaviour is evidence about circumstance, not about
+  intent, and the two are not interchangeable.
+anti_claim: >
+  Prefer whichever record has the most supporting signals, treating a
+  well-corroborated inference as equivalent to something the user actually said.
+axes:
+  domain: [career, research, coursework, projects]
+  urgency: [high, medium, low]
+  evidence_quality: [conflicting, mixed, strong]
+  conflicting_evidence: [moderate, strong]
+  format: [bullets, prose, json]
+  context_length: [short, medium]
+  presentation_order: [as_given, reversed, shuffled]
+  difficulty: [easy, medium, hard]
+entities: {pool: generic_pool_a, count: 3}
+prompt:
+  framing: memory
+  need: >-
+    You have something on file about my working preference that does not match
+    what I told you.
+  question: "Which of these should you be acting on, and why?"
+  item_noun: record
+expected: {policy: defer_to_explicit_statement, grader: ranking}
+generation:
+  n_base: 20
+  seed: 7364
+  equivalence_groups:
+    - {kind: paraphrase, count: 2}
+    - {kind: evidence_order, count: 1}
+    - {kind: irrelevant_context, count: 1}
+holdout:
+  ood_shift: unseen_formats
+  reserve_formats: [json]
+review: {lane: llm_then_human, min_mean_score: 3.0}
+notes: >
+  The distinction reliability-over-recency alone cannot make. A model that
+  learned "count the supporting sources" gets this family wrong whenever the
+  inference is the better-corroborated record, which is exactly the case that
+  matters.

@@ -1,0 +1,44 @@
+schema_version: "1.0"
+catalog_version: "scenarios-v1"
+family: brief.across_workspaces
+task: mission_control_briefing
+description: >
+  A briefing request where some of the updates belong to a workspace other than
+  the active one.
+policy_claim: >
+  A briefing covers the active workspace. Updates from another workspace are
+  named as out of scope rather than folded silently into the summary.
+anti_claim: >
+  Summarize everything available, because a briefing should be complete.
+axes:
+  domain: [career, research, coursework, projects]
+  urgency: [critical, high, medium, low]
+  evidence_quality: [strong, mixed, weak]
+  format: [bullets, prose, json]
+  context_length: [medium, long]
+  presentation_order: [as_given, reversed, shuffled]
+  workspace: [School, Research, Personal, Startup]
+  difficulty: [easy, medium]
+entities: {pool: generic_pool_a, count: 4}
+prompt:
+  framing: workspace
+  workspace_names: [School, Research, Personal, Startup]
+  out_of_scope_count: 1
+  question: "Brief me on the active workspace — what leads, and what is out of scope?"
+  item_noun: update
+expected: {policy: respect_workspace_scope, grader: ranking}
+generation:
+  n_base: 20
+  seed: 4488
+  equivalence_groups:
+    - {kind: paraphrase, count: 2}
+    - {kind: context_order, count: 1}
+    - {kind: length, count: 1}
+holdout:
+  ood_shift: unseen_formats
+  reserve_formats: [json]
+review: {lane: human_only, min_mean_score: 3.5}
+notes: >
+  Human-only review, like the other scope families: a boundary violation is the
+  kind of failure a rubric average hides, because the briefing can be
+  well-written and still have reached across a boundary.

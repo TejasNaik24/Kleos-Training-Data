@@ -21,6 +21,10 @@ axes:
   ambiguity: [low, medium]
 entities: {pool: generic_pool_a, count: 4}
 prompt:
+  framing: context
+  need: >-
+    I am about to answer a question about the current milestone and cannot fit
+    all of this in context.
   question: "Which of these should I keep in context, and why?"
   item_noun: fragment
 expected: {policy: rank_by_relevance_over_recency, grader: ranking}

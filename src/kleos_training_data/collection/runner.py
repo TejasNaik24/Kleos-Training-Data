@@ -85,6 +85,8 @@ def run_batch(
     failures: list[tuple[str, str]] = []
     requests = 0
 
+    seen_capture_ids: dict[str, str] = {}
+
     for scenario in scenarios:
         pool = SurrogatePool.load(scenario.entities.pool)
         candidates = generate(scenario, pool)
@@ -105,6 +107,27 @@ def run_batch(
                     adapter.name,
                 )
                 continue
+
+            # A capture_id already used in this batch means the adapter derived
+            # the same id for two different requests, and writing would silently
+            # replace the earlier file. The count would still say both were
+            # captured — which is how 204 lost captures went unnoticed until the
+            # normalized count failed to match. A collision is a failure, not a
+            # write.
+            if capture.capture_id in seen_capture_ids:
+                failures.append(
+                    (
+                        f"{scenario.family}:{candidate.situation.point_index}",
+                        f"capture_id {capture.capture_id} was already produced by "
+                        f"{seen_capture_ids[capture.capture_id]}; writing it would "
+                        f"overwrite that capture",
+                    )
+                )
+                continue
+            seen_capture_ids[capture.capture_id] = (
+                f"{scenario.family}:{candidate.situation.point_index}"
+                f"{'/' + candidate.perturbation_kind if candidate.perturbation_kind else ''}"
+            )
 
             path = write_record(capture, destination / f"{capture.capture_id}.json")
             written.append(path)

@@ -49,6 +49,18 @@ _EVIDENCE_BY_QUALITY: dict[str, tuple[str, ...]] = {
 
 _IMPACTS: tuple[str, ...] = ("high", "medium", "low")
 
+#: How far apart the candidates sit, by declared difficulty. Larger means the
+#: leader is more clearly ahead, so an easy point is well separated and a hard
+#: one is bunched — which is what makes a hard point genuinely hard rather than
+#: merely labelled that way.
+_DIFFICULTY_SPREAD: dict[str, int] = {"easy": 2, "medium": 1, "hard": 0}
+
+#: Ages used to construct Decision B's stale-explicit case. The floor sits above
+#: `STALE_AFTER_DAYS` and the ceiling well below it, so the boundary is crossed
+#: unambiguously rather than by a day.
+_STALE_FLOOR_DAYS: int = 45
+_FRESH_CEILING_DAYS: int = 7
+
 #: Irrelevant context, added when the context_length axis asks for it. Nothing
 #: here bears on any decision — that is the test.
 _DISTRACTORS: tuple[str, ...] = (
@@ -169,20 +181,50 @@ def _build_items(
 
     names = pool.names(scenario.family, point_index=index, count=count)
 
+    # Which slots sit outside the active workspace. Rotated by point so the
+    # out-of-scope item is not always in the same position — a fixed position
+    # would let a model answer by index rather than by reading the marker.
+    out_of_scope: set[int] = set()
+    if scenario.prompt.framing == "workspace" and scenario.prompt.out_of_scope_count:
+        first = _deterministic_index(scenario.family, index, "scope", modulo=count)
+        out_of_scope = {
+            (first + offset) % count for offset in range(scenario.prompt.out_of_scope_count)
+        }
+
     items: list[Item] = []
     for slot in range(count):
         key = f"item_{chr(ord('a') + slot)}"
         # `difficulty` controls how far apart the candidates are: on an easy
         # point the leader is clearly ahead, on a hard one the field is tight.
-        spread = 0 if difficulty == "easy" else 1
+        #
+        # This was inverted. `spread` staggers each slot's deadline by
+        # `slot * spread`, so spread=0 leaves the field bunched — and easy
+        # points were the ones getting spread=0, producing the *tightest*
+        # fields under the label "easy" while medium points were cleanly
+        # separated. The difficulty axis was measuring the opposite of what it
+        # named, which is worse than not having it.
+        spread = _DIFFICULTY_SPREAD.get(difficulty, 1)
         deadline = (
             deadlines[
                 _deterministic_index(scenario.family, index, key, "deadline", modulo=len(deadlines))
             ]
             + slot * spread
         )
-        evidence = evidences[
-            _deterministic_index(scenario.family, index, key, "evidence", modulo=len(evidences))
+        # `out_of_scope_stronger` splits the evidence draw by scope: everything
+        # inside the active workspace comes from the weak set, everything outside
+        # it from the strong set. That is what makes "nothing here can answer
+        # this, but something over there can" an actual property of the
+        # situation rather than a claim the answer makes without support.
+        if scenario.prompt.out_of_scope_stronger:
+            pool_for_slot = (
+                _EVIDENCE_BY_QUALITY["strong"]
+                if slot in out_of_scope
+                else _EVIDENCE_BY_QUALITY["weak"]
+            )
+        else:
+            pool_for_slot = evidences
+        evidence = pool_for_slot[
+            _deterministic_index(scenario.family, index, key, "evidence", modulo=len(pool_for_slot))
         ]
         impact = _IMPACTS[
             _deterministic_index(scenario.family, index, key, "impact", modulo=len(_IMPACTS))
@@ -190,6 +232,29 @@ def _build_items(
         detail = _DETAILS[
             _deterministic_index(scenario.family, index, key, "detail", modulo=len(_DETAILS))
         ]
+        # `defer_to_explicit_statement` compares a stated preference against an
+        # inferred one. If every record is `confirmed` the scenario asserts the
+        # user made several contradictory explicit statements, the policy cannot
+        # apply, and it degrades to evidence ranking under an explicit-statement
+        # label. The last slot is therefore always inferred, so the contrast the
+        # family is named for is present by construction.
+        if (
+            scenario.expected.policy == "defer_to_explicit_statement"
+            and slot == count - 1
+            and evidence == "confirmed"
+        ):
+            evidence = "corroborated"
+
+        # Decision B's legislated case, built rather than hoped for: slot 0 is an
+        # explicit statement older than the staleness threshold, slot 1 is a
+        # recent corroborated record that contradicts it. Every other slot is
+        # drawn normally so the family still varies.
+        if scenario.prompt.stale_explicit_conflict:
+            if slot == 0:
+                evidence, deadline = "confirmed", max(deadline, _STALE_FLOOR_DAYS)
+            elif slot == 1:
+                evidence, deadline = "corroborated", min(deadline, _FRESH_CEILING_DAYS)
+
         items.append(
             Item(
                 key=key,
@@ -198,9 +263,50 @@ def _build_items(
                 evidence=evidence,
                 impact=impact,
                 detail=detail,
+                scope="out" if slot in out_of_scope else "in",
             )
         )
+    # A policy whose *primary* criterion is identical across every candidate has
+    # nothing to rank on and falls through to its own tiebreak — which for the
+    # reliability and relevance families is recency, i.e. their stated
+    # anti_claim. Force a difference on the primary key so the family cannot
+    # quietly teach the opposite of what it claims.
+    items = _ensure_primary_key_discriminates(scenario, items)
     return tuple(items)
+
+
+#: The attribute each policy ranks on first. A family whose primary key is
+#: constant across all candidates cannot demonstrate its own claim.
+_PRIMARY_KEY: dict[str, str] = {
+    "rank_by_reliability_over_recency": "evidence",
+    "rank_by_relevance_over_recency": "impact",
+    "select_by_evidence_need": "evidence",
+    "resolve_or_abstain_on_support": "evidence",
+}
+
+
+def _ensure_primary_key_discriminates(scenario: Scenario, items: list[Item]) -> list[Item]:
+    """Give the last candidate a different primary-key value when all of them match."""
+    key = _PRIMARY_KEY.get(scenario.expected.policy)
+    if key is None or len(items) < 2:
+        return items
+    values = {getattr(item, key) for item in items}
+    if len(values) > 1:
+        return items
+
+    last = items[-1]
+    if key == "evidence":
+        grades = ("confirmed", "corroborated", "reported", "single_source", "unverified")
+        current = last.evidence
+        swap = (
+            grades[(grades.index(current) + 1) % len(grades)] if current in grades else "reported"
+        )
+        items[-1] = Item(**{**last.__dict__, "evidence": swap})
+    else:
+        levels = ("high", "medium", "low")
+        swap = levels[(levels.index(last.impact) + 1) % len(levels)]
+        items[-1] = Item(**{**last.__dict__, "impact": swap})
+    return items
 
 
 def build_situation(
@@ -212,14 +318,34 @@ def build_situation(
     distractor_count = {"short": 0, "medium": 2, "long": 4}.get(
         point.get("context_length", "short"), 0
     )
+    # Walk the pool from a per-point offset instead of hashing each slot
+    # independently. Independent hashing collides: two slots drawing the same
+    # index printed the same sentence twice in one prompt, which happened on 29
+    # of 150 examples and reads as a generator artefact rather than as context.
+    start = _deterministic_index(scenario.family, index, "distractor", modulo=len(_DISTRACTORS))
     distractors = tuple(
-        _DISTRACTORS[
-            _deterministic_index(
-                scenario.family, index, slot, "distractor", modulo=len(_DISTRACTORS)
-            )
-        ]
-        for slot in range(distractor_count)
+        _DISTRACTORS[(start + slot) % len(_DISTRACTORS)]
+        for slot in range(min(distractor_count, len(_DISTRACTORS)))
     )
+
+    # The workspace the prompt names *is* the workspace axis value. These used to
+    # be two independent mechanisms — the axis sampled from `axes.workspace`, the
+    # rendered name cycled from `prompt.workspace_names` by point index — so they
+    # never had to agree and on v0.0.2 they disagreed on all 338 workspace
+    # examples: metadata said `Personal` while the prompt said `Startup`. The
+    # label described nothing in the text, which makes any workspace-sliced
+    # coverage figure or holdout meaningless.
+    #
+    # Deriving the name from the axis makes the mismatch unrepresentable rather
+    # than merely fixed. `workspace_names` remains a fallback for a family that
+    # renders a workspace without declaring the axis.
+    workspace_name = ""
+    if scenario.prompt.framing == "workspace":
+        workspace_name = point.get("workspace") or ""
+        if not workspace_name and scenario.prompt.workspace_names:
+            workspace_name = scenario.prompt.workspace_names[
+                index % len(scenario.prompt.workspace_names)
+            ]
 
     return Situation(
         task=scenario.task,
@@ -229,6 +355,11 @@ def build_situation(
         items=items,
         distractors=distractors,
         question=scenario.prompt.question,
+        framing=scenario.prompt.framing,
+        need=scenario.prompt.need,
+        workspace_name=workspace_name,
+        request_ambiguous=scenario.prompt.request_ambiguous,
+        stale_explicit_conflict=scenario.prompt.stale_explicit_conflict,
     )
 
 
@@ -332,6 +463,25 @@ def _perturb(situation: Situation, kind: str, ordinal: int) -> Situation:
     )
 
 
+def _with_derived_difficulty(
+    axes: dict[str, str], situation: Situation, policy: str
+) -> dict[str, str]:
+    """Replace the declared difficulty with the one the situation actually has.
+
+    Leaves the axes untouched when the scenario never declared a difficulty, and
+    when the policy has no registered ordering — a label that cannot be computed
+    is dropped rather than guessed at.
+    """
+    from kleos_training_data.scenarios.difficulty import derive_difficulty
+
+    if "difficulty" not in axes:
+        return axes
+    derived = derive_difficulty(situation, policy)
+    if derived is None:
+        return {k: v for k, v in axes.items() if k != "difficulty"}
+    return {**axes, "difficulty": derived}
+
+
 def generate(scenario: Scenario, pool: SurrogatePool) -> list[Candidate]:
     """Generate every candidate for a scenario, base examples and perturbations.
 
@@ -362,7 +512,16 @@ def generate(scenario: Scenario, pool: SurrogatePool) -> list[Candidate]:
         situation = build_situation(scenario, point, index, pool)
         decision = decide(situation, scenario.expected.policy)
 
-        base_axes = {**point, "task": scenario.task}
+        # The difficulty that ships is *derived* from the situation under the
+        # policy that resolves it, never the value declared in the axis. The
+        # declared value still shapes generation (it staggers deadlines), but it
+        # described the example only by coincidence: measured under each policy's
+        # own ordering key, v0.0.3's declared labels were anti-correlated with
+        # decision difficulty. A label the pipeline computes cannot drift from
+        # what it labels — the same reason the training target is computed.
+        base_axes = _with_derived_difficulty(
+            {**point, "task": scenario.task}, situation, scenario.expected.policy
+        )
         base = Candidate(
             situation=situation,
             decision=decision,
@@ -406,7 +565,11 @@ def generate(scenario: Scenario, pool: SurrogatePool) -> list[Candidate]:
                     situation=variant,
                     decision=variant_decision,
                     messages=_messages(variant, variant_decision),
-                    variation_axes={**variant.axes, "task": scenario.task},
+                    variation_axes=_with_derived_difficulty(
+                        {**variant.axes, "task": scenario.task},
+                        variant,
+                        scenario.expected.policy,
+                    ),
                     scenario_family=scenario.family,
                     # Same group as its base: a perturbation pair straddling the
                     # split boundary is meaningless to compare.

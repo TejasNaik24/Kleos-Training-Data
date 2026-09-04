@@ -12,20 +12,23 @@ anti_claim: >
   Always reach for the most powerful or most general tool, or whichever source
   was updated most recently.
 axes:
-  domain: [career, research, coursework]
-  urgency: [high, medium]
+  domain: [career, research, coursework, projects]
+  urgency: [critical, high, medium, low]
   evidence_quality: [strong, mixed, weak]
   format: [bullets, prose, json]
   context_length: [short, medium]
-  presentation_order: [as_given, reversed]
-  difficulty: [easy, medium]
-entities: {pool: generic_pool_a, count: 3}
+  presentation_order: [as_given, reversed, shuffled]
+  difficulty: [easy, medium, hard]
+entities: {pool: source_pool_a, count: 3}
 prompt:
+  framing: routing
+  need: >-
+    I need to know the agreed delivery date for the current milestone.
   question: "Which of these should I check to answer that, and why?"
   item_noun: source
 expected: {policy: select_by_evidence_need, grader: ranking}
 generation:
-  n_base: 6
+  n_base: 22
   seed: 2201
   equivalence_groups:
     - {kind: paraphrase, count: 1}

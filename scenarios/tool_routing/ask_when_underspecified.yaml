@@ -1,0 +1,48 @@
+schema_version: "1.0"
+catalog_version: "scenarios-v1"
+family: route.ask_when_underspecified
+task: tool_routing
+description: >
+  The question as asked does not determine which source answers it, because a
+  constraint the choice depends on was never supplied.
+policy_claim: >
+  When the leading source rests on an input nobody has supplied, ask the one
+  question that resolves it. A missing variable is not a close call, and no
+  amount of reasoning over what is present will produce the answer.
+anti_claim: >
+  Pick the most plausible source and answer anyway, because asking a question
+  looks like failing to help.
+axes:
+  domain: [career, research, coursework, projects]
+  urgency: [high, medium, low]
+  evidence_quality: [weak, mixed]
+  format: [bullets, prose, json]
+  context_length: [short, medium, long]
+  presentation_order: [as_given, shuffled]
+  ambiguity: [high]
+  difficulty: [medium, hard]
+entities: {pool: source_pool_a, count: 3}
+prompt:
+  framing: routing
+  request_ambiguous: true
+  need: >-
+    Someone asked me for "the latest numbers" and I am not sure where to look.
+  question: "Where should I look for that?"
+  item_noun: source
+expected: {policy: ask_when_request_ambiguous, grader: ranking}
+generation:
+  n_base: 18
+  seed: 9077
+  equivalence_groups:
+    - {kind: paraphrase, count: 2}
+    - {kind: evidence_order, count: 1}
+    - {kind: irrelevant_context, count: 1}
+holdout:
+  ood_shift: unseen_formats
+  reserve_formats: [json]
+review: {lane: llm_then_human, min_mean_score: 3.0}
+notes: >
+  The clarifying-question family. Distinct from rec.abstain_without_evidence:
+  that one handles a narrow margin between options, this one handles an input
+  that was never supplied at all. The two need different answers and the
+  dataset should not blur them.

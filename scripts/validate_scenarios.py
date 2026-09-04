@@ -127,6 +127,24 @@ def _check_scenario(scenario: Scenario, pools: dict[str, SurrogatePool]) -> list
     if len(set(ids)) != len(ids):
         problems.append(f"{len(ids) - len(set(ids))} generated candidate(s) are duplicates")
 
+    # `difficulty` is declared as a generation hint but *derived* for the
+    # shipped label, so a family can declare a level it never actually produces.
+    # That is not an error — the derived label is the truthful one — but an
+    # author who declared `hard` and produced none should see it, because it
+    # means the family cannot construct the situation it thought it was
+    # describing.
+    if "difficulty" in scenario.axes:
+        from kleos_training_data.scenarios.difficulty import derive_difficulty
+
+        realized = {derive_difficulty(c.situation, scenario.expected.policy) for c in candidates}
+        realized.discard(None)
+        if not realized:
+            problems.append(
+                f"policy {scenario.expected.policy!r} has no registered ordering key, so "
+                f"difficulty cannot be derived; remove the axis or register the key in "
+                f"scenarios/difficulty.py"
+            )
+
     # Consistency testing needs at least two members per group, or it silently
     # reports nothing at all.
     if scenario.generation.equivalence_groups:
@@ -139,6 +157,46 @@ def _check_scenario(scenario: Scenario, pools: dict[str, SurrogatePool]) -> list
             )
 
     return problems
+
+
+def _report_difficulty(scenarios: list[Scenario], pools: dict[str, SurrogatePool]) -> None:
+    """Show declared difficulty against what each family actually produces.
+
+    The shipped label is measured from the situation under the policy that
+    resolves it, so a declaration is a hint rather than a promise. Printing both
+    is what stops the hint quietly diverging from the data again.
+    """
+    from kleos_training_data.scenarios.difficulty import derive_difficulty
+
+    rows: list[tuple[str, str, str]] = []
+    for scenario in scenarios:
+        if "difficulty" not in scenario.axes:
+            continue
+        pool = pools.get(scenario.entities.pool)
+        if pool is None:
+            continue
+        realized: Counter[str] = Counter()
+        for candidate in generate(scenario, pool):
+            level = derive_difficulty(candidate.situation, scenario.expected.policy)
+            if level:
+                realized[level] += 1
+        rows.append(
+            (
+                scenario.family,
+                "/".join(scenario.axes["difficulty"]),
+                ", ".join(f"{k}:{v}" for k, v in sorted(realized.items())) or "(none)",
+            )
+        )
+    if not rows:
+        return
+    print("\n  ── difficulty: declared hint vs measured label " + "─" * 24)
+    print(f"  {'family':<34}{'declared':<22}measured")
+    for family, declared, measured in rows:
+        print(f"  {family:<34}{declared:<22}{measured}")
+    print(
+        "\n  The measured column is what ships. Difficulty is derived from the\n"
+        "  situation under the policy that resolves it, never from the declaration."
+    )
 
 
 def _coverage(scenarios: list[Scenario]) -> dict[str, object]:
@@ -205,6 +263,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"      ✗ {problem}")
         if problems:
             failures[scenario.family] = problems
+
+    _report_difficulty(scenarios, pools)
 
     coverage = _coverage(scenarios)
     print("\n  ── catalog coverage " + "─" * 50)

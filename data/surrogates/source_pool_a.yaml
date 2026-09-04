@@ -1,0 +1,34 @@
+# Fictional information sources, for the tool-routing families.
+#
+# In v0.0.2 the routing families drew their "candidate sources" from the project
+# pool, so a student was asked to choose between `Northwind`, `Marchwood` and
+# `Ashford` — opaque proper nouns whose only distinguishing features were the
+# attributes printed beside them. The policy taught was right; nothing about the
+# surface resembled routing a real question to a real place.
+#
+# These are named by *kind* rather than by identity, deliberately. A source's
+# properties — how directly it bears on the question, how stale it is, how far it
+# reaches — are drawn independently of its name, so no name reliably wins and the
+# name cannot become the shortcut. What transfers is "match the source to the
+# evidence the question needs", not "Northwind answers scheduling questions".
+#
+# Every entry is generic infrastructure a CS student would plausibly have. None
+# refers to a real product, service, organization or person — see PRIVACY.md.
+kind: source
+values:
+  - the course calendar
+  - the shared project channel
+  - your saved notes
+  - the assignment portal
+  - the team wiki
+  - the advisor thread
+  - the meeting transcript
+  - the issue tracker
+  - the reading list
+  - the lab notebook
+  - the syllabus archive
+  - the group chat history
+  - the submission log
+  - the office-hours queue
+  - the peer-review comments
+  - the schedule export

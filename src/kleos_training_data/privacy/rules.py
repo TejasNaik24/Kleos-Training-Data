@@ -368,9 +368,17 @@ STRUCTURAL_RULES: Final[tuple[Rule, ...]] = (
         "person_name",
         "structural",
         "review",
+        # `[ \t]+`, not `\s+`: a person's name is written on one line. Allowing
+        # the separator to match a newline joined the last word of one line to
+        # the first word of the next, so "Active workspace: Research\nBlue
+        # Harbor is due..." matched "Research Blue" and redaction rewrote it to
+        # "Active workspace: Sam Ridley Harbor" — corrupting a prompt whose
+        # assistant turn still named Blue Harbor, which the no_unsupported_claims
+        # gate then correctly rejected. Narrowing the separator removes the false
+        # positive without weakening the rule on any name a person would write.
         re.compile(
             r"\b(?!(?:" + "|".join(SENTENCE_STARTERS) + r")\b)"
-            r"[A-Z][a-z]{2,}\s+[A-Z][a-z]{2,}\b"
+            r"[A-Z][a-z]{2,}[ \t]+[A-Z][a-z]{2,}\b"
         ),
         slot="PERSON",
     ),

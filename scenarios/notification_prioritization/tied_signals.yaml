@@ -1,0 +1,45 @@
+schema_version: "1.0"
+catalog_version: "scenarios-v1"
+family: notif.tied_signals
+task: notification_prioritization
+description: >
+  Several notifications arrive with genuinely comparable urgency and support.
+  Nothing in the queue separates the leaders, and the field is deliberately
+  bunched (difficulty: hard) rather than merely labelled that way.
+policy_claim: >
+  When two notifications are separated by less than the evidence can resolve,
+  say so and name what would settle it. A ranking produced anyway is a guess
+  with a confident tone.
+anti_claim: >
+  Always return a ranked list, because a ranking is what was asked for — even
+  when nothing in the input separates the top two.
+axes:
+  domain: [career, research, coursework, projects]
+  urgency: [critical, high, medium, low]
+  evidence_quality: [weak, mixed]
+  conflicting_evidence: [none, moderate]
+  format: [bullets, prose, json]
+  context_length: [short, medium, long]
+  presentation_order: [as_given, reversed, shuffled]
+  ambiguity: [medium, high]
+  difficulty: [hard]
+entities: {pool: generic_pool_a, count: 3}
+prompt:
+  framing: priority
+  question: "Which of these should I deal with first?"
+  item_noun: notification
+expected: {policy: rank_or_abstain_when_close, grader: ranking}
+generation:
+  n_base: 20
+  seed: 8821
+  equivalence_groups:
+    - {kind: paraphrase, count: 2}
+    - {kind: evidence_order, count: 1}
+    - {kind: irrelevant_context, count: 1}
+holdout:
+  ood_shift: unseen_formats
+  reserve_formats: [json]
+review: {lane: llm_then_human, min_mean_score: 3.0}
+notes: >
+  Carries urgency=low and urgency=critical for this task, and ambiguity=high,
+  all of which the first catalog left uncovered for notification_prioritization.

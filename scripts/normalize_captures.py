@@ -59,16 +59,18 @@ def main(argv: list[str] | None = None) -> int:
     # Rebuild the request side from the catalog. The capture holds the answer;
     # the prompt that produced it is reproducible from the scenario, and
     # re-deriving it is what lets normalization verify the two still agree.
-    requests_by_capture: dict[str, object] = {}
+    # Keyed by (family, point), holding *every* request at that point rather
+    # than one per perturbation kind. The key used to include the kind and the
+    # base id but not the ordinal, so the two members of a `count: 2` paraphrase
+    # group shared a key and the second replaced the first — leaving 204
+    # captures in the batch whose prompt was no longer in the lookup, reported
+    # as "no prompt in the catalog matches this capture".
+    requests_by_point: dict[str, list[object]] = {}
     for scenario in load_catalog(args.scenarios or DEFAULT_CATALOG_DIR):
         pool = SurrogatePool.load(scenario.entities.pool)
         for candidate in generate(scenario, pool):
-            request = to_request(scenario, candidate)
-            key = (
-                f"{scenario.family}|{candidate.situation.point_index}|"
-                f"{candidate.perturbation_kind}|{candidate.perturbation_of}"
-            )
-            requests_by_capture[key] = request
+            key = f"{scenario.family}|{candidate.situation.point_index}"
+            requests_by_point.setdefault(key, []).append(to_request(scenario, candidate))
 
     print(f"\n  batch  : {args.batch}")
     print(f"  source : {source}")
@@ -79,8 +81,8 @@ def main(argv: list[str] | None = None) -> int:
     transformations: Counter[str] = Counter()
 
     for capture in iter_records(source, RawCapture):
-        key = f"{capture.scenario.family}|{capture.scenario.point_index}|"
-        matches = [k for k in requests_by_capture if k.startswith(key)]
+        key = f"{capture.scenario.family}|{capture.scenario.point_index}"
+        matches = requests_by_point.get(key, [])
         if not matches:
             failures.append((capture.capture_id, "no scenario point matches this capture"))
             continue
@@ -88,11 +90,10 @@ def main(argv: list[str] | None = None) -> int:
         # A capture identifies its point; the perturbation dimension is resolved
         # by matching the request hash, so a reordered catalog cannot silently
         # pair a capture with the wrong prompt.
-        request = None
-        for candidate_key in matches:
-            option = requests_by_capture[candidate_key]
-            from kleos_training_data.hashing import canonical_hash
+        from kleos_training_data.hashing import canonical_hash
 
+        request = None
+        for option in matches:
             if (
                 canonical_hash({"system": option.system_prompt, "user": option.user_message})
                 == capture.request_hash

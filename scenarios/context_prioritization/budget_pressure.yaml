@@ -1,0 +1,49 @@
+schema_version: "1.0"
+catalog_version: "scenarios-v1"
+family: ctx.budget_pressure
+task: context_prioritization
+description: >
+  Substantially more context than fits, under a hard budget. Deliberately
+  long-context and weighted toward the `projects` domain, which the first
+  catalog never covered for this task.
+policy_claim: >
+  Under a context budget, keep what bears on the question and drop the rest,
+  however recent. A budget makes the relevance judgement sharper, not looser.
+anti_claim: >
+  Under pressure, keep the most recent fragments, because recency is a cheap
+  proxy for relevance.
+axes:
+  domain: [projects, career, research, coursework]
+  urgency: [critical, high, medium, low]
+  evidence_quality: [strong, mixed, weak, conflicting]
+  conflicting_evidence: [none, moderate, strong]
+  format: [bullets, prose]
+  context_length: [long]
+  presentation_order: [as_given, reversed, shuffled]
+  difficulty: [easy, medium, hard]
+  ambiguity: [low, medium, high]
+entities: {pool: generic_pool_a, count: 5}
+prompt:
+  framing: context
+  need: >-
+    I am answering a question about the current milestone and have room for
+    about half of what is stored.
+  question: "Which fragments make the cut, and which do I drop?"
+  item_noun: fragment
+expected: {policy: rank_by_relevance_over_recency, grader: ranking}
+generation:
+  n_base: 24
+  seed: 5192
+  equivalence_groups:
+    - {kind: paraphrase, count: 2}
+    - {kind: schema, count: 1}
+    - {kind: evidence_order, count: 1}
+holdout:
+  ood_shift: unseen_entities
+  reserve_entity_pools: [generic_pool_z]
+review: {lane: llm_then_human, min_mean_score: 3.0}
+notes: >
+  Carries conflicting_evidence across three values and ambiguity across all
+  three, both of which were concentrated in a single family before. Excludes
+  `json` from its format axis so the `schema` perturbation cannot collide with
+  a format holdout.
