@@ -5,10 +5,11 @@ build-backend = "hatchling.build"
 [project]
 name = "kleos-training-data"
 version = "0.1.0"
-description = "Private collection, review, sanitization and release pipeline for KLEOS training datasets"
+description = "Collection, sanitization, review and versioned release pipeline for KLEOS fine-tuning datasets"
 readme = "README.md"
+license = "MIT"
 requires-python = ">=3.11"
-authors = [{ name = "KLEOS Research" }]
+authors = [{ name = "Tejas Naik" }]
 keywords = ["dataset", "privacy", "sanitization", "provenance", "reproducibility"]
 classifiers = [
   "Private :: Do Not Upload",

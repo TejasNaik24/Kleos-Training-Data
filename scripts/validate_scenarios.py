@@ -266,7 +266,7 @@ def main(argv: list[str] | None = None) -> int:
     print_result(
         True,
         f"{len(scenarios)} scenario(s) valid.",
-        hint="Next: python scripts/generate_synthetic.py --out-batch <id>",
+        hint="Next: python scripts/capture_backend.py --adapter mock --out-batch <id>",
     )
     return EXIT_OK
 

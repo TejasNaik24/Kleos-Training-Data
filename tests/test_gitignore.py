@@ -107,9 +107,9 @@ def is_ignored(sandbox, relative: str) -> bool:
 @pytest.mark.parametrize("relative", MUST_BE_IGNORED)
 def test_private_paths_are_ignored(sandbox, relative: str) -> None:
     assert is_ignored(sandbox, relative), (
-        f"{relative} would be COMMITTED. This repository is private, but private "
-        f"git is not a vault — a clone, a fork or a collaborator sees it, and "
-        f"history is forever. Check .gitignore uses `<zone>/*` rather than "
+        f"{relative} would be COMMITTED. Anything committed is visible to every "
+        f"clone and fork, and git history is permanent. "
+        f"Check .gitignore uses `<zone>/*` rather than "
         f"`<zone>/`: git cannot re-include a file whose parent directory is "
         f"excluded. Debug with: git check-ignore -v {relative}"
     )

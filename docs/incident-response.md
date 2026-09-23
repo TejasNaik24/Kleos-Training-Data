@@ -1,79 +1,97 @@
 # Incident response
 
-Three kinds of incident. The common thread: **rotate or contain first, tidy up
-second**, and never confuse deleting a file with fixing the problem.
+Runbooks for three kinds of incident: an exposed secret, personal data found in
+a promoted example or release, and a consent problem. The last sections cover
+trained models and how an incident is recorded.
 
-## An exposed secret
+## Contents
 
-Deleting the file in a later commit does **not** remove it from history.
+- [Principles](#principles)
+- [Exposed secret](#exposed-secret)
+- [Personal data in a promoted example or release](#personal-data-in-a-promoted-example-or-release)
+- [Consent problem](#consent-problem)
+- [Trained models](#trained-models)
+- [Post-incident record](#post-incident-record)
 
-1. **Rotate the credential immediately.** Assume it is compromised. Do this
-   before anything else — cleanup can wait, rotation cannot.
-2. Stop distribution: do not push, do not share the branch.
-3. Remove it from the working tree.
-4. Rewrite history with `git filter-repo`, and force-push only after
-   coordinating with anyone holding a clone.
-5. **Verify the old credential is actually invalid** by trying to use it. A
-   rotation you did not confirm is a rotation you did not do.
-6. Audit access logs for use during the exposure window.
-7. Record it in `CHANGELOG.md` under a `Security` heading.
+## Principles
 
-If the secret reached a *candidate* rather than the repository, the pipeline has
-already refused it: secrets are `block` severity, never redacted, and the
-candidate is rejected with `SECRET_DETECTED`. That is a signal about the **capture
-path**, not about one example. Investigate how a credential reached a prompt
-before re-running anything.
+- Contain first and clean up second.
+- Removing a file in a later commit does not remove it from git history or from
+  existing clones.
+- Never edit a sealed release. Publish a corrected release under a new version.
+- Every incident ends with a test that would have caught it.
 
-## PII in a promoted example or a release
+## Exposed secret
 
-1. **Stop.** Do not build, do not train, do not share the release further.
+1. Rotate the credential immediately, and assume it has been used.
+2. Stop distribution. Do not push, and do not share the branch.
+3. Remove the secret from the working tree.
+4. If it was committed, rewrite history with `git filter-repo`, and coordinate
+   any force-push with everyone who has a clone.
+5. Confirm the old credential no longer works by trying to use it.
+6. Check the provider's access logs for use during the exposure window.
+7. Record the incident in [CHANGELOG.md](../CHANGELOG.md) under a Security
+   heading.
+
+A secret inside a candidate is handled by the pipeline itself. Secrets have
+`block` severity, are never redacted, and cause the candidate to be rejected with
+`SECRET_DETECTED`. Treat it as a problem with the capture path, and find out how
+a credential reached a prompt before capturing again.
+
+## Personal data in a promoted example or release
+
+1. Stop. Do not build from, train on or share the affected release.
 2. Identify the scope:
+
    ```bash
-   python scripts/verify_release.py --release <dir>
-   python scripts/coverage_report.py --release <dir> --json reports/coverage/incident.json
+   python scripts/verify_release.py --release releases/kleos-policy-v0.0.6 --strict
    ```
-   `provenance.json` and `staging/promoted/<id>.json`'s audit block trace each
-   example back to its capture, ruleset version and signed review.
-3. Quarantine the release: move it out of `releases/` so nothing picks it up.
-   **Do not edit it** — an edited release still carries its old version string and
-   every reference to that version now means two different things.
-4. Determine how it passed. Gates G04–G07 exist to catch exactly this, so a
-   promoted example carrying PII means either a detection gap or a rule change
-   since promotion. Add the case to `tests/test_privacy.py` first, so the fix has
-   a failing test.
-5. Publish a corrected **new version**. Never reuse the old one.
-6. Assess trained checkpoints separately — see below.
 
-## A consent problem
+   Each promoted example's audit record in `staging/promoted/` links it to its
+   capture batch, lane, privacy ruleset version and decision record.
+3. Quarantine the release by moving it out of `releases/` so nothing picks it
+   up. Do not edit it. An edited release would keep its version name while
+   containing different bytes.
+4. Find out how the example passed. Promotion gates G04 to G07 exist to catch
+   this, so either a detector missed it or the rules changed after promotion.
+   Add the case to `tests/test_privacy.py` as a failing test before fixing the
+   detector.
+5. Publish a corrected release under a new version.
+6. Assess any model trained on the affected release, as described in
+   [Trained models](#trained-models).
 
-Someone's data was used on a basis that does not hold.
+## Consent problem
 
-1. Quarantine the source: mark the lane and stop further capture from it.
-2. Determine which examples derive from it. Under the current design this should
-   be *none in any release*, because `production_observation` can never be
-   promoted — gate G10 rejects the lane outright. If a release does contain such
-   material, that is itself the incident: a gate was bypassed or the lane was
-   mislabelled.
-3. Consult product and legal. This is not an engineering decision.
-4. Block promotion from that source until it is resolved.
+Use this runbook when data was used without a valid consent basis.
 
-## Trained checkpoints
+1. Stop capturing from the source.
+2. Determine which examples derive from it. Captures in the
+   `production_observation` lane cannot be promoted, because promotion gate G10
+   rejects the lane, so no release should contain such material. If one does, a
+   gate was bypassed or a capture was mislabeled, and that is a separate
+   incident.
+3. Involve the product and legal owners. This is not an engineering decision.
+4. Block promotion from the source until the question is resolved.
 
-**A model trained on the data cannot be edited.** Deleting the source does not
-remove what a model learned from it.
+## Trained models
 
-The honest options are: retrain from a corrected release, or accept and document
-that a checkpoint retains the material. Which one is appropriate depends on what
-the material is and where the checkpoint went. Pretending there is a third option
-is how this goes wrong.
+A trained model cannot be edited to remove what it learned, and deleting the
+source data does not change the model. The options are to retrain from a
+corrected release, or to document that the checkpoint retains the material. The
+right choice depends on what the material is and where the checkpoint was shared.
 
-What this repository provides is the ability to answer *which* releases and
-*which* checkpoints are affected, because every release is immutable and
-content-hashed and every example traces back to its provenance. That is the
-tractable part.
+Release content hashes and per-example audit records identify which releases,
+and therefore which checkpoints, are affected.
 
-## Writing it up
+## Post-incident record
 
-Every incident gets a `CHANGELOG.md` entry recording what happened, what was
-affected, what was done, and what changed so it cannot recur. An incident without
-a test is an incident that will happen again.
+Record every incident in [CHANGELOG.md](../CHANGELOG.md) under a Security
+heading. Include what happened, what was affected, what was done, and what
+changed to prevent a repeat, including the test that now covers the case.
+
+## Related documentation
+
+- [../SECURITY.md](../SECURITY.md): reporting and credential handling
+- [../DATA_GOVERNANCE.md](../DATA_GOVERNANCE.md): deletion requests and retention
+- [privacy.md](privacy.md): the detection layers
+- [staging.md](staging.md): the promotion gates

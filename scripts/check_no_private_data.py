@@ -382,11 +382,11 @@ def main(argv: list[str] | None = None) -> int:
     if failed:
         print("✗ Private-data scan FAILED.", file=sys.stderr)
         print(
-            "\n  This repository is PRIVATE, but private git is not a secure vault.",
+            "\n  Secrets and personal data must never enter git history.",
             file=sys.stderr,
         )
-        print("  A clone, a fork, or a future collaborator sees everything in", file=sys.stderr)
-        print("  history. Do not commit until these are resolved.\n", file=sys.stderr)
+        print("  Anyone with a clone or a fork sees everything that was ever", file=sys.stderr)
+        print("  committed. Do not commit until these are resolved.\n", file=sys.stderr)
         print("  If a hit is a false positive, rewrite the line so it cannot be", file=sys.stderr)
         print("  mistaken for a real secret. Adding a file to SELF_EXEMPT turns", file=sys.stderr)
         print("  this scanner off for that file permanently.\n", file=sys.stderr)

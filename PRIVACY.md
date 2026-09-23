@@ -1,162 +1,112 @@
 # Privacy
 
-The engineering requirements for handling data in this repository.
+This document describes how KLEOS Training Data handles personal data, what the
+pipeline guarantees, and where its guarantees end. Implementation details are in
+[docs/privacy.md](docs/privacy.md).
 
-> **This document describes what the code does. It is not legal advice, and it
-> does not establish that any particular consent mechanism is sufficient in any
-> particular jurisdiction.** Before real end-user conversations are ever used for
-> training, the product's terms, its disclosures and its opt-out mechanics need
-> review by qualified counsel. Nothing in the current pipeline depends on that
-> review, because the `real_sanitized` path is not enabled — see *Capture lanes*
-> below.
+> This document describes engineering practice. It is not legal advice and does
+> not establish that any consent mechanism is sufficient in any jurisdiction.
+> Before real end-user conversations are used for training, the KLEOS product's
+> terms, disclosures and opt-out mechanics need review by qualified counsel. The
+> current pipeline does not depend on that review, because it never promotes
+> data from real users.
 
-## The principle
+## Contents
 
-> **Train a generalizable decision policy, not private facts about a person.**
+- [Principle](#principle)
+- [Data sources](#data-sources)
+- [Protection layers](#protection-layers)
+- [Guarantees](#guarantees)
+- [Limitations](#limitations)
+- [Retention, deletion and incidents](#retention-deletion-and-incidents)
 
-PII removal is necessary and **not sufficient**. Consider:
+## Principle
 
-> Prioritize the Motorola project — your internship there ends in three weeks
-> and your manager already flagged the deadline.
+> Train a generalizable decision policy, not private facts about a person.
 
-Strip every name and it still teaches a model that a specific person had a
-specific internship ending on a specific timeline. A model that memorizes this
-can surface it later, to someone else. The example is unusable no matter how
-thoroughly it is scrubbed.
+A training example should teach a rule that transfers to anyone. Compare two
+targets for the same kind of question:
 
-The transferable version of the same lesson:
-
-> When one opportunity has a nearer deadline, confirmed stakeholder attention,
-> and a higher cost of delay, rank it first — and say which of those three
-> facts is doing the work.
-
-This is why *private-fact review* is a separate stage from PII scanning, with
-its own gate. PII is a **string** problem with a mechanical fix. A private fact
-is a **semantic** problem with no mechanical fix at all.
-
-## Capture lanes
-
-The KLEOS backend answers from the *authenticated user's own* stored projects,
-memories and notifications. It is not a scenario simulator. Every capture from it
-is one person's private data, whatever the prompt was.
-
-| Lane | Where the content comes from | May promote? |
+| Target | Example | Problem |
 | --- | --- | --- |
-| `synthetic` | Scenario YAML, rendered locally, no backend | Yes |
-| `mock_backend` | Deterministic offline adapter | Yes |
-| `production_observation` | The real KLEOS backend | **Never** |
+| Private fact | "Prioritize the robotics project. Marcus Holloway's internship at Acme Labs ends in three weeks and his manager already flagged the deadline." | Teaches a fact about one person. A model that memorizes it can repeat it to someone else. |
+| Transferable policy | "When one task has a nearer deadline, confirmed evidence that it matters and a higher cost of delay, rank it first and name the factor that decided it." | None. It applies to anyone. |
 
-`production_observation` captures are rejected outright by promotion gate
-`G10_PROVENANCE`. They exist for exactly one purpose: a human reads one in a
-reviewer packet, learns what situation genuinely arises in use, and writes a
-**new** generalized scenario from that understanding. The resulting example is
-`synthetic_seeded`, has a different content hash, and has no textual descent from
-the capture.
+Removing the name does not fix the first example. It still describes a specific
+person with a specific internship ending on a specific date. PII detection
+handles strings, and a separate private-fact review handles situations like this
+one, because no string substitution can repair them.
 
-This keeps the honest research value — knowing which situations actually occur —
-without ever training on the situation itself. It also means the consent question
-above blocks nothing today.
+## Data sources
 
-Self-generated scenarios sent through a real backend are **not** `real_sanitized`
-merely because a real deployment answered them. Product usage is not permission
-for model training.
+Every example in every release so far was generated from the synthetic scenario
+catalog and captured through the offline mock backend. No release contains
+conversations, records or other data from real users.
 
-## The four detection layers
-
-Deterministic gates are authoritative. An LLM may assist; it may never approve.
-
-**1. Secrets** — API keys, tokens, JWTs, private key blocks, session cookies,
-database URLs with passwords. Severity `block`: **never** auto-redacted, always a
-hard reject. A secret in a candidate means the capture path itself is
-compromised, and quietly replacing the string would hide that.
-
-**2. PII** — email, phone, street address, postal code, government-style
-identifiers, student and employee ids, URLs carrying tokens, home directory
-paths, social handles, UUIDs, absolute dates, person-name and organization-name
-heuristics. Severity `redact`.
-
-**3. Entity vault** — an operator-maintained list of literals that regex cannot
-find: a real employer, an advisor's name, a project codename that reads like an
-ordinary noun. Lives in `vault/`, `chmod 700`, git-ignored, never in a release.
-Entries are added via stdin rather than argv so they do not land in shell
-history.
-
-**4. Private-fact heuristics** — produce *signals*, never redactions. The
-strongest is `fact.unsupported_entity`: a proper noun asserted in an assistant
-turn that appears nowhere in the prompt. That is a model stating something it was
-not told, which is either a hallucination or a memory — and both are
-disqualifying.
-
-## Redaction, then surrogates
-
-Detection produces `[[PERSON_1]]`-style placeholders. Those placeholders are
-**not** what gets trained on. A second stage substitutes a consistent *fictional*
-surrogate drawn deterministically from a committed pool.
-
-Training on `[[PERSON_1]]` teaches a model to emit bracket tokens and destroys
-the naturalness the task depends on. Training on the real name teaches a private
-fact. A fictional surrogate keeps the text natural and keeps coreference intact —
-"Dana" is the same person across all three turns of a conversation.
-
-Surrogates are keyed on **scenario family**, not globally and not per-example.
-Within a conversation and its equivalence group the surrogate is stable; across
-families the same real person maps to a *different* fictional person. That last
-property is what actually defeats memorization: there is no cross-example entity
-left to memorize.
-
-The maps live in `vault/surrogate_maps/`. They are needed to re-derive a release,
-never to consume one, and they never leave this machine.
-
-## What the pipeline guarantees, and what it does not
-
-**It does guarantee:**
-
-- No candidate reaches a dataset without passing every privacy gate.
-- A human, not a model, owns the final approval.
-- A human cannot approve over a failing privacy or private-fact gate — the
-  decision object cannot be constructed. The only way forward is to fix the
-  content, which changes its hash and its id, which invalidates the review and
-  demands a fresh one.
-- Every promoted example carries provenance back to its capture, its ruleset
-  version and its signed review.
-- Releases are immutable, so "what was this model trained on?" always has an
-  exact answer.
-
-**It does not guarantee:**
-
-- That the heuristics catch everything. They are a floor under human judgement.
-  A reviewer who approves without reading is the failure mode no gate closes.
-- That a sanitized example is safe. Sanitization fixes strings. Whether the
-  *situation* is identifying is a judgement call, and it is the one the private-
-  fact gate asks a human to make.
-- That an already-trained checkpoint can be corrected. It cannot. This is why
-  the gates run before promotion rather than before release.
-
-## Retention
-
-| Artifact | Default | Rationale |
+| Lane | Source | Promotable |
 | --- | --- | --- |
-| Raw captures | Delete once the sanitized candidate and its privacy record exist | Highest-risk artifact, shortest useful life |
-| Sanitized candidates | Keep while their release is current | Needed to re-derive |
-| Privacy results | Keep | Audit trail; contains digests, never matched values |
-| Review records | Keep | The provenance of a decision |
-| Rejection records | Keep the reason code and hash; drop the content | "Which failure dominates?" must stay answerable without keeping the offending text |
-| Vault and surrogate maps | Keep while any release derived from them is current | Re-derivation |
-| Releases | Immutable, kept | Reproducibility |
+| `mock_backend` | The deterministic offline adapter, rendering catalog scenarios | Yes |
+| `synthetic` | Scenarios rendered locally without a backend. Defined, but not produced by the current tools. | Yes |
+| `production_observation` | The live KLEOS backend | No. Promotion gate G10 rejects the lane. |
 
-Deletion requests are handled in `DATA_GOVERNANCE.md`. The honest summary: an
-immutable release cannot be rewritten without breaking every comparison that
-referenced it, so a request is satisfied in *future* releases plus an explicit
-assessment of active datasets and trained checkpoints. Deleting a raw JSON file
-does not solve this problem, and this repository does not pretend otherwise.
+The live KLEOS backend answers from the authenticated user's own projects,
+memories and notifications, so every capture from it is personal data regardless
+of the prompt. Such a capture can only inform a new scenario that a person writes
+by hand. It never becomes a training example. Using the product does not grant
+permission to train on the result. The capture lanes and the safeguards around
+production capture are described in
+[docs/collection.md](docs/collection.md#capture-lanes).
 
-## Fixture policy
+## Protection layers
 
-Everything committed under `data/` must be obviously fake: `Alice Example`,
-`example.invalid`, `555-0100`. Never commit a real person's information to test
-privacy scanning.
+| Stage | Protection |
+| --- | --- |
+| Sanitization | Secrets block the candidate. PII, entity-vault literals and name heuristics are replaced with fictional surrogates. Private-fact signals are recorded for review. |
+| Review | A decision record cannot approve an example while its `no_private_data` or `policy_not_facts` review hard gate is `FAIL`. |
+| Promotion | Mandatory promotion gates G04 to G07 re-scan the exact bytes being promoted for secrets, PII, surrogate residue and private facts. |
+| Release | The written split files are scanned byte by byte, and the result is recorded as `contains_private_data` in the manifest. |
+| Repository | Runtime zones (`staging/`, `vault/`, `releases/`, `reports/`) are git-ignored, and a standard-library scanner checks the repository before commits and in CI. |
 
-Fixtures that must genuinely *match* a secret pattern live inline in the test
-module that asserts the match, and that module is listed in the scanner's
-`SELF_EXEMPT`. Keeping them there rather than in `data/` is what lets the
-committed fixtures stay strictly non-matching.
+## Guarantees
+
+The following hold for every promoted example and every release, and each is
+enforced by code:
+
+- The example passed promotion gates G04 to G07, which cannot be bypassed.
+- The example has an approving decision record bound to its content hash.
+  Editing the content afterwards invalidates the approval at promotion gate G08.
+- A secret was never auto-redacted. A candidate containing one is rejected.
+- The example keeps an audit record in `staging/promoted/`: its content hash,
+  all 14 promotion gate results, the digest of its decision record, the privacy
+  ruleset version, the scenario fingerprint, the capture lane and the batch.
+- The release is immutable and content-hashed, so the data a model was trained
+  on can always be identified exactly.
+
+## Limitations
+
+- Pattern matching and heuristics reduce risk but do not catch everything. They
+  support human review and do not replace it.
+- A sanitized example can still describe an identifying situation. Deciding
+  whether it does is the purpose of the private-fact review.
+- A decision record shows that approval was recorded, not how carefully the
+  example was read. The approvals in releases to date were filled from machine
+  review results with `--adopt-machine-gates`, while the privacy promotion gates
+  still checked every example.
+- Deleting data does not remove it from a model already trained on it. See
+  [DATA_GOVERNANCE.md](DATA_GOVERNANCE.md#deletion-requests).
+
+## Retention, deletion and incidents
+
+- Retention periods and deletion requests: [DATA_GOVERNANCE.md](DATA_GOVERNANCE.md)
+- Responding to exposed secrets or personal data:
+  [docs/incident-response.md](docs/incident-response.md)
+- Reporting a privacy or security concern:
+  [SECURITY.md](SECURITY.md#reporting-a-vulnerability)
+
+## Related documentation
+
+- [docs/privacy.md](docs/privacy.md): detection rules, surrogates and fact
+  signals
+- [docs/review.md](docs/review.md): review hard gates and decision records
+- [docs/staging.md](docs/staging.md): the promotion gates
+- [CONTRIBUTING.md](CONTRIBUTING.md#fixture-policy): rules for test fixtures

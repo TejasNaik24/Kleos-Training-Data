@@ -1,100 +1,146 @@
 # Collection
 
-## The three lanes
+Collection turns scenario requests into raw capture records in `staging/raw/`.
+This document covers the capture lanes, the adapters, the guard around
+production capture, and the HTTP transport used by the backend adapters.
 
-This is the most consequential distinction in the repository.
+## Contents
 
-| Lane | Content | Promotable |
+- [Capture lanes](#capture-lanes)
+- [Adapters](#adapters)
+- [Running a capture](#running-a-capture)
+- [Production capture guard](#production-capture-guard)
+- [HTTP transport](#http-transport)
+- [Logging](#logging)
+
+## Capture lanes
+
+Every capture is stamped with a lane, and the lane decides whether its content
+can ever reach a dataset.
+
+| Lane | Source | Contract source | Promotable |
+| --- | --- | --- | --- |
+| `mock_backend` | The deterministic mock adapter | `synthetic` | Yes |
+| `synthetic` | Scenarios rendered locally without a backend. Defined, but not produced by the current tools. | `synthetic` | Yes |
+| `production_observation` | The live KLEOS backend | `real_sanitized` | No |
+
+Every release so far was built from the `mock_backend` lane.
+
+The live KLEOS backend answers from the authenticated user's own projects,
+memories and notifications, so a capture from it is that user's personal data
+whatever the prompt asked. Promotion gate G10 rejects the `production_observation`
+lane outright. Such a capture can serve only as reference material: a person reads
+it, learns what situations occur in real use, and writes a new, generalized
+scenario by hand. The contract vocabulary includes a `synthetic_seeded` source
+type for examples written this way. The current tools do not produce it.
+
+## Adapters
+
+| Adapter | Lane | Behavior |
 | --- | --- | --- |
-| `synthetic` | Rendered locally from a scenario | yes |
-| `mock_backend` | Deterministic offline adapter | yes |
-| `production_observation` | The real KLEOS backend | **never** |
+| `mock` | `mock_backend` | Renders the scenario's expected answer as a server-sent event stream: a keepalive comment, `answer_start`, the answer in 48-character `answer_delta` chunks, a `citation` frame and `done`. The answer is wrapped in a `<think>` reasoning span and uses CRLF line endings, so every mock capture exercises normalization. The same scenario and batch always produce the same capture ID and bytes. |
+| `kleos_chat` | `production_observation` | Sends `POST /api/v1/career/projects/chat` as a multipart form built from `CHAT_FORM_DEFAULTS` plus the question. |
+| `kleos_json` | `production_observation` | Reads a plain-JSON view: `briefing` (`/api/v1/mission/briefing`), `notifications` (`/api/v1/notifications`) or `memory` (`/api/v1/memory`). |
 
-`POST /api/v1/career/projects/chat` answers from the *authenticated user's own*
-stored projects, memories and notifications. It is not a scenario simulator: a
-capture from it is that person's private data whatever the prompt asked. Gate
-`G10_PROVENANCE` rejects the lane outright.
+`CHAT_FORM_DEFAULTS` turns off every optional feature of the chat endpoint.
+`thinking`, `knowledge_base`, `web_search`, `deep_research` and
+`ask_tool_permission` are `false`, `model_mode` is `small`, and the Drive,
+GitHub, GitLab, Notion, Slack, Discord, Dropbox and OneDrive integrations are
+disabled. An enabled integration would pull more of the user's connected
+accounts into the capture. There is no option or flag to change these values,
+and a test asserts that `capture_backend.py` does not reference them.
 
-Such a capture is **seed material**. A human reads it in a reviewer packet,
-learns what situation genuinely arises, and writes a *new* generalized scenario.
-The resulting example is `synthetic_seeded`, has a different content hash, and
-has no textual descent from the capture. That keeps the research value — knowing
-which situations actually occur — without training on one.
+The `kleos_chat` and `kleos_json` adapters require an HTTP transport from the
+`collect` extra and raise `CaptureError` without one. `capture_backend.py` does
+not construct a transport yet, so the capture CLI currently runs only the `mock`
+adapter.
 
-## The mock adapter
-
-Not a pass-through. It emits real SSE frames, chunks the answer across
-`answer_delta` events, wraps it in a `<think>` span and uses CRLF line endings —
-so normalization has genuine work to do. A mock that gives the next stage nothing
-to do proves nothing about it.
-
-It is deterministic: the same scenario and batch produce the same capture id and
-the same bytes, so re-running a batch does not fill staging with near-duplicates.
+## Running a capture
 
 ```bash
-python scripts/capture_backend.py --adapter mock --out-batch slice-001
+python scripts/capture_backend.py --adapter mock --out-batch batch-001
 ```
 
-## The real adapters
+| Option | Effect |
+| --- | --- |
+| `--out-batch <id>` | Required. Batch directory under `staging/raw/`. |
+| `--adapter <name>` | Adapter to use. Default `mock`. |
+| `--family <id>` | Limit to one family. Can be repeated. |
+| `--limit <n>` | Stop after `n` requests |
+| `--scenarios <path>` | Catalog directory. Default `scenarios/`. |
+| `--dry-run` | Run the production guard and stop |
 
-Behind the `collect` extra, and they refuse to instantiate without a transport —
-so the offline lane cannot accidentally be pointed at a network client.
+Each batch directory contains one record per capture and a `_batch.json` summary
+with the batch ID, lane, adapter, endpoint, pipeline version, families and
+request, capture and failure counts. A capture ID that repeats within a batch is
+reported as a failure instead of overwriting the earlier record. The script
+exits with code 1 if any capture fails.
 
-`kleos_chat` sends a multipart form with **every integration forced off**:
-`web_search`, `deep_research`, Drive, GitHub, GitLab, Notion, Slack, Discord,
-Dropbox, OneDrive. Any integration that fires pulls more of the operator's
-connected accounts into a capture that is already private data, for no research
-value. Turning one on means editing `CHAT_FORM_DEFAULTS`, which is a diff a
-reviewer sees.
+## Production capture guard
 
-`kleos_json` covers the plain-JSON views — mission briefing, notifications,
-memory. A different response discipline, which is why the adapter boundary exists
-rather than one client full of branches.
+The guard in `collection/guard.py` applies when `--base-url` points to a
+non-local target. Local targets are the `mock://` scheme and the hosts
+`127.0.0.1`, `localhost`, `0.0.0.0`, `*.local` and `*.test`.
 
-## The production guard
+A non-local capture requires all four conditions:
 
-Capturing against a non-local URL requires **all four**:
+| Condition | Provided by |
+| --- | --- |
+| Explicit opt-in on the command line | `--allow-production` |
+| Explicit opt-in in the environment | `KLEOS_ALLOW_PRODUCTION_CAPTURE=1` |
+| Typed confirmation | `--confirm "I understand this captures real personal data"` |
+| Not running in automation | The `CI` environment variable is unset or empty. No option overrides this condition. |
 
-1. `--allow-production`
-2. `KLEOS_ALLOW_PRODUCTION_CAPTURE=1`
-3. the exact confirmation phrase, typed
-4. `CI` unset
+Each condition guards against a different accident, such as a flag copied into a
+script or an environment variable inherited from a shell profile. If any
+condition fails, the guard raises `ProductionGuardError`, lists which conditions
+were met and which were not, and exits with code 1. The error message never
+explains how to disable the guard.
 
-Four, because any one alone is something a person can do by accident or a script
-can inherit. The fourth is **not overridable**: an automated production capture is
-never legitimate, and a flag that could disable that check would end up set in a
-workflow file and forgotten.
+An authorized run writes `_capture_authorization.json` into the batch directory
+with the target host, the time, the operator role, the scenario families, the
+expected capture count and the conditions met. The file records the host rather
+than the full URL, because a URL can carry a token in its query string.
 
-The refusal names which conditions failed. It deliberately never names a way to
-turn the guard off.
+`--base-url` is currently read only by the guard. The mock adapter ignores it,
+so an authorized run of the current CLI still captures through the mock adapter.
 
-A permitted run writes `_capture_authorization.json` beside the batch, recording
-the host — never the URL, which can carry a token in its query string.
+## HTTP transport
 
-## Transport
+`HttpTransport` in `collection/transport.py` is the HTTP layer for the backend
+adapters. It requires the `collect` extra (`httpx`).
 
-- Retry only `{408, 429, 500, 502, 503, 504}` and timeouts. A 401 or 422 fails
-  identically on a second attempt; retrying wastes the budget and delays the real
-  error.
-- A **per-batch** retry budget, not per-request. Per-request limits let a
-  degraded backend turn 50 scenarios into 200 requests against a service already
-  struggling.
-- Full-jitter backoff, honouring `Retry-After` in both integer and HTTP-date form.
-- Token-bucket rate limiting, conservative by default.
-- SSE streams are **never** retried: a stream that failed midway already
-  delivered a partial answer, and re-requesting produces a second, differently
-  truncated one.
+| Behavior | Setting |
+| --- | --- |
+| Retried | HTTP 408, 429, 500, 502, 503, 504, timeouts and connection errors |
+| Never retried | HTTP 400, 401, 403, 404, 405, 422 |
+| Attempts | Up to 4 per request |
+| Retry budget | 20 retries shared by all requests through one transport instance |
+| Backoff | Full jitter, a random delay between 0 and `min(0.5 × 2^attempt, 20)` seconds |
+| `Retry-After` | Honored in seconds or HTTP-date form, capped at 20 seconds |
+| Rate limit | Token bucket at 20 requests per minute with a burst of 5, applied to every attempt |
+| Timeout | 60 seconds |
+| Redirects | Not followed |
+| Tracing | Each request carries an `X-Request-Id` header |
+
+Status codes that fail identically on a second attempt are not retried, and a
+shared budget stops a degraded backend from multiplying the request load.
+Server-sent event responses are parsed into frames once received, and an `error`
+frame or a missing `done` frame raises `CaptureError`.
 
 ## Logging
 
-Counts and timings only. Never a request body, never a response body, at any
-level, behind any flag. A log line is the easiest way for private content to
-escape, because logs get pasted into issues.
+| Source | Logged fields |
+| --- | --- |
+| Capture runner | Capture ID, family, point, status, latency, frame count and byte count |
+| HTTP transport, on a retryable failure | Request ID, attempt, status, wait time and remaining retry budget |
 
-```
-request_id=... attempt=1 status=200 waited_ms=48 budget_left=20
-```
+Request and response bodies are not logged. Credentials are wrapped in
+`SafeSecret`, described in [SECURITY.md](../SECURITY.md#credential-handling).
 
-Credentials are wrapped in `SafeSecret`, which renders as
-`<secret len=64 sha256=1a2b3c4d>` under `str`, `repr`, f-strings and
-`json.dumps(default=str)`. `.reveal()` is called in exactly one non-test file.
+## Related documentation
+
+- [../PRIVACY.md](../PRIVACY.md): why production captures are never promoted
+- [staging.md](staging.md): normalization and the records that follow capture
+- [scenarios.md](scenarios.md): the catalog that capture requests come from
+- [../SECURITY.md](../SECURITY.md): credential handling

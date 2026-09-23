@@ -1,92 +1,191 @@
 # Dataset lifecycle
 
-## Splitting
+This document describes how promoted examples become an immutable, versioned
+release: split assignment, out-of-distribution holdouts, sealing, verification,
+versioning and hand-off to kleos-models.
 
-Group-aware by default. A base example and its perturbations share a `group_id`,
-and a group never straddles the boundary — a perturbation pair on both sides
-makes consistency testing meaningless, because it compares a memorized example
-against itself.
+## Contents
 
-Determinism comes from **stable hashing, not shuffling**:
+- [Building a release](#building-a-release)
+- [Splitting](#splitting)
+- [Holdouts](#holdouts)
+- [Sealing](#sealing)
+- [Verification](#verification)
+- [Versioning](#versioning)
+- [Consuming a release](#consuming-a-release)
 
-```python
-sha256(f"{seed}:{group_key}")
+## Building a release
+
+`build_release.py` reads every example in `staging/promoted/`, assigns splits and
+seals the result under `releases/<version>/`:
+
+```bash
+python scripts/build_release.py --version kleos-policy-v0.0.7 --holdout-attribute format --description "One-line summary"
 ```
 
-An example's split depends only on its group key and the seed, so **adding
-examples never reshuffles the existing ones**. That property is what makes two
-dataset versions comparable at all, and it is why group keys must stay stable
-across versions.
+| Option | Default | Effect |
+| --- | --- | --- |
+| `--version <name>` | Required | Release name. An existing version is refused. |
+| `--holdout-attribute <name>` | None | Holdout attribute to resolve: `format`, `entities` or `domain`. Required when the catalog declares holdouts on more than one attribute. |
+| `--strategy <name>` | From the holdout, otherwise `group` | Split strategy |
+| `--seed <n>` | 42 | Split seed |
+| `--train-fraction`, `--validation-fraction`, `--test-fraction` | 0.7, 0.15, 0.15 | Split fractions |
+| `--group-key <key>` | None | Metadata key that defines a group |
+| `--allow-uncovered-holdout` | Off | Allow a reserved value with no examples |
+| `--description <text>` | Empty | One-line description for the manifest |
+| `--declare-private` | Off | Record `contains_private_data: true` and write the release despite scan findings |
+| `--dry-run` | Off | Plan the split without writing anything |
 
-Strategies: `random` (development only), `group`, `scenario_family_holdout`,
-`entity_holdout`, `domain_holdout`, `format_holdout`.
+The script exits with code 1 when there are no promoted examples or the version
+already exists, and with code 4 when the final privacy scan finds a problem that
+was not declared.
 
-## OOD holdouts are declared, not discovered
+## Splitting
 
-The public splitter will happily choose holdout values itself, in stable-hash
-order. That is fine for development and useless for a research claim: **an OOD
-result you can only describe after running the split is a description of where a
-hash landed, not a hypothesis you tested.**
+A base example and its perturbations share a `group_id`, and a group is never
+split across train, validation and test. If a perturbation and its base landed
+on opposite sides, a consistency test would compare an example the model trained
+on with a near copy of itself.
 
-So holdouts come from the scenario catalog. A family declares what it reserves
-and which shift kind that represents; `resolve_holdouts()` turns those
-declarations into the explicit `holdout_values` handed to the splitter.
+Assignment uses a stable hash instead of a shuffle:
 
-Two failures are caught there rather than downstream, because both produce a
-release that looks complete:
+```python
+rank = int.from_bytes(hashlib.sha256(f"{seed}:{group_key}".encode()).digest()[:8], "big") / 2**64
+```
 
-- a reserved value with **no coverage** yields a silently empty test split;
-- a reservation covering **everything** leaves no training data.
+A group goes to train when `rank` is below the train fraction, to validation when
+it is below the train and validation fractions combined, and to test otherwise.
+The assignment depends only on the group key and the seed, so adding examples
+never moves existing groups, and two releases built with the same seed and
+fractions split their shared groups identically.
 
-Declaring holdouts on two attributes at once is refused: a drop in test
-performance could not be attributed to either shift.
+| Strategy | Assignment |
+| --- | --- |
+| `random` | Seeded shuffle of examples sorted by ID. Intended for development only. |
+| `group` | Whole groups by stable hash |
+| `scenario_family_holdout` | Whole scenario families by stable hash |
+| `format_holdout`, `entity_holdout`, `domain_holdout` | Examples with held-out attribute values go to test. Validation comes from the remaining, seen values. |
 
-**A family must not perturb the axis its release holds out on.** If it does, a
-base and its variant carry different values of that axis and land on opposite
-sides, breaking the group. `validate_scenarios.py` enforces this — it was found
-by `verify_release` catching six straddled groups after `formatting` and `schema`
-perturbations met a format holdout.
+Holdout strategies need at least two distinct values of the attribute, and
+holding out every value is an error. Because validation contains only seen
+values, early stopping never looks at the out-of-distribution data the test
+split is meant to measure.
 
-Validation is drawn from the *seen*-attribute remainder while test holds the
-unseen values. Early stopping on OOD data would leak the very thing the split
-exists to measure.
+`build_release.py` defaults to 0.7/0.15/0.15, while the `SplitConfig` model
+defaults to 0.8/0.1/0.1. `provenance.json` records the strategy, seed, split
+counts and group count, but not the fractions themselves, so a rebuild must pass
+the same fractions (the defaults, unless they were overridden).
+
+## Holdouts
+
+Scenario families declare their holdouts in the catalog (`reserve_formats`,
+`reserve_entity_pools`, `reserve_domains`), and `resolve_holdouts()` turns those
+declarations into explicit values for the splitter. Declaring holdouts first
+means the test split measures a shift chosen in advance.
+
+These conditions stop the build:
+
+| Condition | Reason |
+| --- | --- |
+| Holdouts are declared on two attributes and `--holdout-attribute` is not given | A drop in test performance could not be attributed to either shift |
+| A reserved value has no examples | The test split would be silently empty. `--allow-uncovered-holdout` permits it. |
+| The holdout covers every value | No training data would remain |
+| A family declares an unregistered shift kind | The shift could not be reported |
+
+A family must not perturb the attribute its holdout reserves. A `formatting` or
+`schema` perturbation of a family that reserves `json` would put a base example
+and its variant on opposite sides of the split, so `validate_scenarios.py`
+rejects that combination.
+
+The current catalog declares format holdouts in 15 families and entity-pool
+holdouts in 4, so builds pass `--holdout-attribute format`. Every release so far
+holds out `format=json`.
 
 ## Sealing
 
-1. Assemble in `releases/.staging-<uuid>/`
-2. Write only canonical filenames
-3. Build the manifest from the files actually written
-4. **Re-read and re-parse** every file — catches a truncated write
-5. Byte-level privacy scan of the final artifact
-6. Refuse if `releases/<version>/` exists
-7. `os.replace` the directory into place — atomic on one filesystem
-8. `chmod 0o444` / `0o555`
-9. Write `RELEASE.lock`
+A release is assembled in a temporary directory and moved into place in one
+step:
 
-There is deliberately **no `--force`**. Every comparison and every trained
-checkpoint that named a version meant one specific set of bytes. If the content
-needs to change, the version string changes.
+1. Refuse to continue if `releases/<version>/` already exists.
+2. Create `releases/.staging-<random hex>/`.
+3. Write each non-empty split using the canonical file names.
+4. Build the manifest from the files as written.
+5. Re-read every split and check its count and ID order, which catches a
+   truncated write.
+6. Scan the written bytes for secrets and PII, unless `--declare-private` was
+   given.
+7. Write `provenance.json`.
+8. Write `manifest.json`.
+9. Write `RELEASE.lock` with the content hash and the hash of every file.
+10. Move the directory into place with `os.replace`. On any error, the staging
+    directory is deleted.
+11. Set the release files to mode 0444 and the directory to 0555.
 
-Permissions are a speed bump — anyone can `chmod`. `RELEASE.lock` plus
-verification is the actual guarantee, and CI re-verifies on every run so post-hoc
-drift fails a build rather than surviving quietly.
+`build_release.py` has no option to overwrite a release. If the content needs to
+change, the version must change, because every comparison and every model
+trained on a version refers to one specific set of bytes. Read-only permissions
+prevent accidental edits, and `RELEASE.lock` combined with verification detects
+any change that does happen.
 
 ## Verification
 
-`verify_release` shares no computation with the writer. Reusing it would only
-prove the writer is self-consistent, which is not the question — the question is
-whether the files on disk say what the manifest claims.
-
-It recomputes counts, all four distributions, every file hash and the content
-hash; re-parses every line; and asserts no id in two splits, no group straddling,
-100% `quality_status: reviewed`, exact filenames only, and a clean byte scan.
-
 ```bash
-python scripts/verify_release.py --release <dir> --strict
+python scripts/verify_release.py --release releases/kleos-policy-v0.0.6 --strict
 ```
+
+`verify_release.py` re-reads the files on disk and recomputes what the manifest
+and lock file claim:
+
+| Check | Detects |
+| --- | --- |
+| Manifest present, version matches the directory name | Mislabeled or incomplete releases |
+| Only canonical split files, `train.jsonl` present, every line parses | Aliased or corrupt files |
+| Total count, per-split counts and all four distributions | Manifest drift |
+| No duplicate IDs, no ID in two splits, no group across two splits | Leakage between splits |
+| 100% `quality_status: reviewed` | Examples the kleos-models loader would drop |
+| Every `file_hashes` entry and the `content_hash` | Changed files |
+| Content hash and every file hash in `RELEASE.lock` | Changes since sealing |
+| Byte-level privacy scan of each split | Secrets or PII in the written files |
+
+These 17 check types add up to 32 checks on a standard three-split release. A missing `RELEASE.lock` or `provenance.json` is a warning, and
+`--strict` treats warnings as failures. The script exits with code 0 when the
+release verifies, 4 when a problem involves privacy, and 3 otherwise.
+
+The CI `vertical slice` job builds a complete release from the catalog on every
+push to `main` and every pull request, and verifies it with `--strict`.
 
 ## Versioning
 
-See `DATA_GOVERNANCE.md`. Patch for metadata and formatting, minor for new
-reviewed examples, major when task definitions, preprocessing or research
-interpretation change.
+Releases are named `kleos-policy-vMAJOR.MINOR.PATCH`:
+
+| Change | Version bump |
+| --- | --- |
+| Metadata, formatting or a non-semantic preprocessing fix | Patch |
+| New reviewed examples or wider coverage under the same contract | Minor |
+| Changed task definitions, schema assumptions, preprocessing behavior or research interpretation | Major |
+
+Releases v0.0.1 to v0.0.6 are pre-0.1 research iterations and are numbered
+sequentially. Each release has a [CHANGELOG](../CHANGELOG.md) entry, and records
+its content hash, file hashes, split strategy and seed, and pinned contract
+commit.
+
+## Consuming a release
+
+kleos-models consumes a release as a directory path:
+
+```bash
+python ../Kleos-Models/scripts/train.py --config <config> --dataset releases/kleos-policy-v0.0.6
+```
+
+`releases/` is git-ignored. Releases are build artifacts and are not
+distributed through this repository. See
+[DATA_GOVERNANCE.md](../DATA_GOVERNANCE.md#distribution) for how they are
+shared.
+
+## Related documentation
+
+- [DATASET_CONTRACT.md](../DATASET_CONTRACT.md): the format of a release
+- [scenarios.md](scenarios.md#holdouts): how families declare holdouts
+- [research-protocol.md](research-protocol.md): what the holdouts are meant to
+  measure
+- [compatibility.md](compatibility.md): checking a release against kleos-models

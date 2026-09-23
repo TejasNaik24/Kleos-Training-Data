@@ -1,142 +1,219 @@
 # Changelog
 
-Dataset releases and pipeline changes. Dataset versions are immutable — a
-correction is a new version, never an edit.
+All notable changes to the pipeline and to the dataset releases it produces. The
+format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+Dataset releases are immutable, so a correction is always published as a new
+version.
 
-The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+- [Pipeline](#pipeline)
+- [Dataset releases](#dataset-releases)
 
-## [kleos-policy-v0.0.2] — 2026-09-01
+## Pipeline
 
-Candidate release, pending external review. 1,152 examples across 17 scenario
-families and all seven tasks; 721 train / 157 validation / 274 test, held out on
-`format=json`. Audit: `reports/kleos-policy-v0.0.2-audit.md`.
+`PIPELINE_VERSION` remained `0.1.0` through dataset releases v0.0.1 to v0.0.6.
+Pipeline changes made for a dataset release are listed with that release.
 
-### Fixed — the content layer
+### Unreleased
 
-Six defects that produced examples which were schema-valid, privacy-clean and
-gate-passing while teaching something other than their label. Nothing in the
-pipeline objected, because nothing was checking whether rendered content matched
-the task it was filed under.
+#### Added
 
-- `respect_workspace_scope` tested for the literal substring `"out of scope"` in
-  an item's `detail`; no generated detail ever contained it, so the scope branch
-  was unreachable and **every** `workspace_reasoning` example fell through to
-  plain deadline ranking. Items now carry an explicit `scope` field.
-- `render_system_prompt` accepted a situation and ignored it, giving all seven
-  tasks the prioritization instruction — `tool_routing` examples were told "You
-  help prioritize competing work" and handed candidate sources. Replaced with a
-  registered `Framing` per family.
-- `deadline_days` rendered as a due date under every framing, so memory records
-  read "recorded as of in 4 days". Time now renders by the framing's sense:
-  `due`, `age` or `staleness`.
-- Distractors drawn by hashing each slot independently collided, printing the
-  same sentence twice in one prompt on 29 of 150 examples.
-- `difficulty` was inverted: `easy` mapped to the spread that bunches candidates
-  together, so "easy" points were the hardest to separate.
-- `"due in about 1 weeks"`.
+- MIT `LICENSE`.
+- `docs/scenarios.md`: scenario concepts, the catalog, the YAML field reference,
+  the policy registry and an authoring guide.
 
-### Fixed — silent data loss
+#### Changed
 
-- The mock adapter derived `capture_id` from the axes, which a `paraphrase` does
-  not change, so both members of every `count: 2` paraphrase group produced one
-  id and the second overwrote the first. A 1,152-request batch wrote 948 files
-  while reporting 1,152 captured. The prompt is now in the seed, and the runner
-  treats a repeated `capture_id` as a failure rather than a write.
-- Normalization's request lookup was keyed on
-  `family|point|kind|perturbation_of` — also missing the ordinal — so 204
-  captures reported "no prompt in the catalog matches this capture". Now keyed
-  on `(family, point)` with every request at that point retained.
-- The `person_name` bigram rule used `\s+`, which matches a newline, so
-  `"Active workspace: Research\nBlue Harbor"` matched `"Research Blue"` and
-  redaction corrupted 97 prompts. Narrowed to `[ \t]+`; no scanner exception was
-  added.
+- Rewrote the README and all documentation, and corrected statements about
+  promotion gate counts, configuration loading, review decision records and the
+  scope of the capture CLI.
+- Removed inline comments and docstrings from the codebase. Design documentation
+  lives in `docs/`.
+- Replaced type-checker and linter suppressions with typed code in the gate
+  outcome defaults, `PromotionPolicy.forced`, the kleos-models availability
+  check and atomic record writes.
+- `pyproject.toml` now declares the MIT license and the author.
+- `validate_scenarios.py` suggests `capture_backend.py` as the next step, and
+  the private-data scanner's failure message was reworded.
 
-### Added
+### 0.1.0 - 2026-08-24
 
-- Three registered policies: `defer_to_explicit_statement` (an explicit
-  statement outranks an inference), `ask_when_underdetermined` (a missing
-  variable is not a close call), `prefer_least_privilege_source` (among sources
-  that can answer, the one reaching least far).
-- Six framings — `priority`, `briefing`, `routing`, `memory`, `context`,
-  `workspace` — each with its own instruction, nouns and time sense.
-- Ten scenario families, taking the catalog from 7 to 17 and closing the
-  `task × domain` grid to 28/28.
-- `tests/test_framing_and_content.py` — 23 tests, each pinned to one of the
-  defects above and verified by mutation to fail when it is reintroduced.
+Initial pipeline.
 
-## [Unreleased]
+#### Added
 
-### Added — pipeline
-
-- Three-zone workspace (`staging/`, `vault/`, `releases/`) with deny-by-default
-  ignore rules, proven against real `git` rather than a re-implementation.
-- Zero-dependency private-data scanner, runnable before any install and as a
-  pre-commit hook.
-- Contract mirror — schemas, JSONL writer, splitter, duplicate detection — pinned
-  to kleos-models `12361d53` and verified byte-identical by differential tests.
-- Content-derived example ids: position-independent, provenance-independent, and
-  sensitive to a one-character content change.
-- Scenario system where the training target is **computed from a registered
-  policy**, never authored beside the prompt and never taken from a model's own
-  output.
-- Seven scenario families, one per registered task.
-- Mock capture lane emitting realistic SSE frames, and a production guard
-  requiring four independent conditions — one of which cannot be overridden.
-- Four-layer privacy detection, redaction, and per-family fictional surrogates.
-- Private-fact assessment, modelled separately from PII because it has no
-  mechanical fix.
-- Review rubric where a failing hard gate cannot be approved over — enforced as a
-  model invariant on every construction path.
-- Fourteen promotion gates, thirteen mandatory, with four independent mechanisms
-  preventing `--force` from reaching one.
-- Immutable sealed releases with `RELEASE.lock`, verified by independent
-  re-derivation.
+- Workspace zones (`staging/`, `vault/`, `releases/`, `reports/`) with
+  deny-by-default ignore rules tested against a real git repository.
+- A standard-library private-data scanner that runs before installation, as a
+  pre-commit hook and as the first CI job.
+- A mirror of the kleos-models dataset contract (schemas, JSONL writer,
+  splitter, duplicate detection), pinned to commit `12361d53` and checked by
+  differential tests.
+- Content-derived example IDs.
+- A scenario system in which every training target is computed by a registered
+  policy.
+- A mock capture adapter that emits server-sent events, and a production capture
+  guard that requires four independent conditions.
+- Layered privacy detection with fictional surrogates, and a separate
+  private-fact assessment.
+- A review rubric in which a failing review hard gate prevents approval on every
+  construction path.
+- Fourteen promotion gates, thirteen of them mandatory.
+- Immutable sealed releases with `RELEASE.lock` and independent verification.
 - Coverage reporting over joint axis structure.
-- Real backend adapters (`kleos_chat`, `kleos_json`) and an Anthropic reviewer,
-  both behind optional extras and both refused in CI.
-- `doctor.py`, which reports credential *presence* and never a value.
+- Backend adapters (`kleos_chat`, `kleos_json`) and an Anthropic machine reviewer
+  behind optional extras.
+- `doctor.py`, which reports whether credentials are set without printing them.
 
-### Fixed — during the initial build
+#### Fixed
 
-Each of these produced plausible-looking output, which is why they are recorded:
+- Detection excerpts no longer reveal neighboring matches in their context
+  window.
+- A vault entry matching inside an email address no longer applies two
+  overlapping replacements.
+- Fictional names generated by the pipeline no longer trigger PII or
+  private-fact flags on the synthetic corpus.
+- Surrogates no longer re-trigger the rules that produced them.
+- Sanitization and review use the same allowlist by default.
+- Perturbations that reproduce existing content, including a reordering that
+  lands on the base order, now fail generation.
+- Stratified sampling balances every axis.
+- Promotion gate G12 is mandatory, because bypassing it would also skip exact
+  duplicates.
+- Two tests that could pass vacuously now exercise their targets.
 
-- Privacy detection excerpts reprinted their *neighbours* — the context window
-  around one hit contained the next one. Found in `detect.py`, then again in
-  `facts.py`.
-- A vault entry matching inside an email address applied two overlapping
-  replacements and corrupted the text.
-- 32 false PII flags and 12 false private-fact accusations on our own synthetic
-  corpus, from flagging the fictional names we generated.
-- Sanitization's own surrogates re-triggered the rules that produced them: a
-  redacted `@dana` became `@rowan.baxter`, which is still a handle.
-- Sanitization and the reviewer disagreed about the same bytes, because a shared
-  allowlist was opt-in rather than the default.
-- Perturbations that did not perturb — 24 candidates yielding 19 unique ids.
-- A `context_order` perturbation whose shuffle landed on the order the base
-  already used, producing an identical prompt that silently overwrote its sibling
-  at normalization.
-- `sampling: stratified` did not stratify: six points over three formats gave
-  20 json, 4 prose, 0 bullets.
-- A gate marked bypassable "for near-duplicates only", which would in fact have
-  skipped exact duplicates too, since a bypassed gate does not run at all.
-- Two tests passing vacuously: identical unicode literals, and group ids that
-  were all singletons.
-
-### Known upstream
-
-- `kleos-models/scripts/check_no_private_data.py:234-239` reprints short lines
-  containing the secret it just found, into CI logs. Recorded in
-  `contract/pin.py:KNOWN_UPSTREAM_ISSUES`; our port excises the matched span.
+Issues found in kleos-models at the pinned commit are listed in
+[docs/compatibility.md](docs/compatibility.md#known-upstream-issues).
 
 ## Dataset releases
 
+### kleos-policy-v0.0.6 - 2026-09-04
+
+Repair release: 1,350 examples from 18 scenario families and 12 policies.
+Splits: 820 train, 181 validation, 349 test. Content hash `3cc9a74486c42e8e`.
+338 targets (25%) abstain or ask. An automated audit that probed for every defect
+class found in v0.0.5 found none remaining. Approvals were filled from the
+machine review's results, and a 141-example human review sample has been
+prepared but not completed, so the release is a candidate.
+
+#### Changed
+
+- Close-call abstention uses a relative margin. The top two options must be
+  within 15% of the leader's score (`CLOSE_CALL_RELATIVE_MARGIN`), replacing an
+  absolute margin of 0.08 that did not scale with the score.
+- `ask_when_underdetermined` is split into `verify_when_evidence_weak`, used when
+  no option is adequately supported, and `ask_when_request_ambiguous`, used when
+  the request itself is underspecified.
+- Added `resolve_or_abstain_on_support` for memory conflicts that nothing stored
+  can separate.
+- An explicit statement can now be challenged when it is at least 30 days old and
+  a newer record has evidence of at least 0.8. The new
+  `mem.stale_explicit_conflict` family (64 examples) covers this case.
+- Renamed `rec.ask_when_constraint_missing` to `rec.verify_before_recommending`.
+- The priority instruction presents deadline, evidence and impact as a
+  combination rather than an order, and answers name a deciding factor only when
+  the compared items differ on it.
+
+### kleos-policy-v0.0.5 - 2026-09-03
+
+Human-review correction of v0.0.4: 1,254 examples. Splits: 774 train, 166
+validation, 314 test. Content hash `39e3ce11d14aa75d`.
+
+The review also recorded four policy decisions: keep least-privilege routing;
+keep explicit statements as the strongest evidence, but surface stale conflicts;
+keep the current rate of abstaining and asking; and keep
+`ask_before_crossing_workspace`.
+
+Follow-up audits found problems that v0.0.6 fixes: the absolute close-call
+margin made most close-call abstentions incorrect, one policy combined two
+different reasons to ask, some explanations compared items on factors they
+shared, and the stale explicit statement case had no thresholds and therefore no
+examples.
+
+#### Removed
+
+- 32 examples rejected in a human review of a 127-example sample: explicit
+  statements not honored (3), memory conflicts decided on impact (2), deadlines
+  overridden (4), `ask_when_underdetermined` ranking instead of asking (10) and
+  unjustified insufficient-separation abstentions (13).
+
+### kleos-policy-v0.0.4 - 2026-09-01
+
+Derived difficulty: 1,286 examples. Splits: 793 train, 169 validation, 324
+test. Content hash `82ebe72ae045e02e`.
+
+#### Changed
+
+- The `difficulty` label is computed from each situation under its policy's own
+  ordering (see [docs/scenarios.md](docs/scenarios.md#derived-difficulty)). The
+  previous labels ran opposite to real difficulty: 71% of "easy" examples tied on
+  the primary criterion, compared with 36% of "hard" ones.
+- 882 of 1,286 labels changed, which changed those examples' IDs. Conversations
+  are byte-identical to v0.0.3.
+- New distribution: 897 easy, 290 medium, 75 hard and 24 without a label.
+
+### kleos-policy-v0.0.3 - 2026-09-01
+
+Corrected research release: 1,286 examples. Splits: 793 train, 169 validation,
+324 test. Content hash `7998f82fe51c4900`. Its difficulty labels did not separate
+medium from hard, which v0.0.4 fixes.
+
+#### Added
+
+- The `ask_before_crossing_workspace` policy, and a rebuilt
+  `wsp.absent_in_active` family in which only another workspace has adequate
+  evidence.
+- A source-name pool for routing, so candidates read as sources such as "the
+  issue tracker" instead of project names.
+
+#### Fixed
+
+- Workspace metadata is derived from the rendered workspace, which reduced
+  metadata and prompt mismatches from 338 to 0.
+- Wider entity pools reduced near-duplicates between train and validation from
+  34 to 14.
+- Removed 23 tautological explanations.
+- Grew the thinnest policies: reliability over recency from 18 to 88 examples,
+  and source matching from 24 to 88.
+
+### kleos-policy-v0.0.2 - 2026-09-01
+
+First full-catalog release: 1,152 examples from 17 scenario families covering
+all seven tasks. Splits: 721 train, 157 validation, 274 test. Content hash
+`fe14724d027ce6b4`.
+
+#### Added
+
+- Policies `defer_to_explicit_statement`, `ask_when_underdetermined` and
+  `prefer_least_privilege_source`.
+- Six framings (`priority`, `briefing`, `routing`, `memory`, `context`,
+  `workspace`), each with its own instruction, nouns and time sense.
+- Ten scenario families, growing the catalog from 7 to 17 and covering every
+  task and domain combination.
+- `tests/test_framing_and_content.py`, with a test for each defect below.
+
+#### Fixed
+
+- The workspace-scope branch was unreachable, so workspace examples fell back to
+  deadline ranking. Items now carry an explicit scope.
+- Every task used the prioritization system prompt. Each family now has a
+  registered framing.
+- Memory records rendered their age as a due date. Time now renders according to
+  the framing.
+- Distractor sentences could repeat within one prompt (29 of 150 examples).
+- The difficulty axis was inverted.
+- Durations rendered as "about 1 weeks".
+- Paraphrase pairs produced the same capture ID, so the second overwrote the
+  first (1,152 captures reported, 948 written). The prompt is now part of the
+  capture seed, and a repeated ID fails the batch.
+- Normalization ignored the request ordinal when matching captures, leaving 204
+  captures unmatched.
+- The person-name rule matched across line breaks and corrupted 97 prompts. It
+  now matches spaces and tabs only.
+
 ### kleos-policy-v0.0.1
 
-The vertical-slice proof, not a research dataset.
-
-- 150 examples across seven scenario families, one per registered task
-- split `format_holdout` on `json`, seed 42 — 90 train / 10 validation / 50 test
-- all `source: synthetic`, all `quality_status: reviewed`
-- `contains_private_data: false`, computed from a byte-level scan
-- verified by `verify_release --strict` (32 checks) and loaded by the public
-  `validate_dataset.py` with zero errors
+End-to-end pipeline test, not a research dataset: 150 examples from seven
+scenario families, one per task. Format holdout on `json`, seed 42. Splits: 90
+train, 10 validation, 50 test. Verified with `verify_release.py --strict` and
+loaded by the kleos-models `validate_dataset.py` with zero errors. This release
+was not retained.

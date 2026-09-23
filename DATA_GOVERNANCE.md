@@ -1,108 +1,103 @@
 # Data governance
 
-Who may hold what, for how long, and what happens when someone asks for their
-data back.
+This document defines who holds each artifact the pipeline produces, how
+releases are distributed, how long artifacts are kept, and how deletion requests
+are handled. It describes engineering practice. See the note at the top of
+[PRIVACY.md](PRIVACY.md) about legal review.
 
-> This states the repository's engineering position. It is not legal advice.
-> Before real end-user data is used for training, the product's terms and its
-> opt-out mechanics need review by qualified counsel — see `PRIVACY.md`.
+## Contents
+
+- [Custody](#custody)
+- [Distribution](#distribution)
+- [Retention](#retention)
+- [Immutability](#immutability)
+- [Deletion requests](#deletion-requests)
+- [Incidents](#incidents)
 
 ## Custody
 
-| Artifact | Where | Who can read it | Committed? |
+| Artifact | Location | Access | Committed to git |
 | --- | --- | --- | --- |
-| Raw captures | `staging/raw/` | operator | never |
-| Sanitized candidates | `staging/sanitized/` | operator, reviewers | never |
-| Entity vault, surrogate maps | `vault/` (chmod 700) | operator only | never |
-| Review records | `staging/review/` | operator, reviewers | never |
-| Rejection records | `staging/rejected/` | operator | never |
-| Releases | `releases/` | whoever a release is shared with | never |
-| Reports | `reports/` | operator | never |
+| Raw captures | `staging/raw/` | Operator | No |
+| Normalized and sanitized candidates | `staging/normalized/`, `staging/sanitized/` | Operator and reviewers | No |
+| Review packets and decision records | `staging/review/` | Operator and reviewers | No |
+| Rejection records | `staging/rejected/` | Operator | No |
+| Promoted pool and audit records | `staging/promoted/` | Operator | No |
+| Entity vault | `vault/` (directory 0700, file 0600) | Operator only | No |
+| Releases | `releases/` | Whoever a release is shared with | No |
+| Reports | `reports/` | Operator | No |
 
-`vault/` is the most re-identifying artifact this repository holds: it is
-precisely the map from a fictional surrogate back to a real person. It is needed
-to *re-derive* a release, never to consume one, and it never leaves the machine
-that produced it.
+The entity vault is the most sensitive artifact. It lists the real names and
+terms that sanitization must replace, so it is needed to sanitize new captures
+but never to use a release, and it stays on the machine where it was created.
 
-## Releases are shipped by path, not by git
+## Distribution
 
-A release is consumed as a directory:
+A release is consumed as a directory path:
 
 ```bash
-python <kleos-models>/scripts/train.py --config <config> --dataset <release-dir>
+python ../Kleos-Models/scripts/train.py --config <config> --dataset releases/kleos-policy-v0.0.6
 ```
 
-Committing releases was considered and rejected. Git history is permanent and
-recoverable by anyone with a clone; a mistake in a committed release cannot be
-withdrawn, only followed by an apology. Move releases to encrypted or
-access-controlled artifact storage instead.
+Releases are not committed to git. Git history is permanent and copied to every
+clone, so a release committed by mistake could never be fully withdrawn. Share
+releases through access-controlled storage, and give recipients the release's
+`content_hash` so they can confirm what they received with
+`scripts/verify_release.py`.
 
 ## Retention
 
-| Artifact | Default | Why |
+The pipeline does not delete staged artifacts automatically. These are the
+retention defaults for the operator:
+
+| Artifact | Default | Reason |
 | --- | --- | --- |
-| Raw captures | Delete once the sanitized candidate and its privacy record exist | Highest-risk artifact, shortest useful life |
-| Sanitized candidates | Keep while a release derived from them is current | Needed to re-derive |
-| Privacy records | Keep | Audit trail. Holds digests and redacted excerpts, never matched values |
-| Review records | Keep | The provenance of a decision |
-| Rejection records | Keep the reason code and hash; drop the content | "Which failure dominates?" must stay answerable without retaining the text that failed |
-| Vault, surrogate maps | Keep while any derived release is current | Re-derivation |
-| Releases | Immutable, kept | Reproducibility |
+| Raw captures | Delete once the sanitized candidate and its privacy record exist | The highest-risk artifact, with the shortest useful life |
+| Sanitized candidates | Keep while a release derived from them is current | Needed to rebuild the release |
+| Privacy records | Keep | Audit trail. They contain digests and masked excerpts, never matched values. |
+| Review and decision records | Keep | Record of who decided what, by role |
+| Rejection records | Keep | They contain reason codes, a content hash and gate messages, not the rejected text, so rejection causes stay countable |
+| Entity vault | Keep while any release derived from it is current | Needed to sanitize again |
+| Releases | Keep, unmodified | Reproducibility |
 
-Minimizing raw retention is the single highest-value habit here. Once a sanitized
-candidate and its privacy record exist, the raw capture has served its purpose
-and is pure liability.
+## Immutability
 
-## Immutability, and what it costs
+A release cannot be modified. `build_release.py` refuses to write a version that
+already exists and has no option to overwrite one, and `verify_release.py`
+detects any change after sealing. Every comparison and every model trained on a
+version refers to one specific set of bytes, so a correction is always published
+as a new version. See [docs/dataset-lifecycle.md](docs/dataset-lifecycle.md) for
+the versioning rules.
 
-A dataset version is immutable. `build_release.py` refuses to overwrite one and
-has no `--force`, because every comparison and every trained checkpoint that
-named `kleos-policy-v0.1.0` meant one specific set of bytes.
-
-That has a real cost, and it is worth stating plainly rather than glossing:
-**an immutable release cannot be edited to remove someone's data.** See below.
-
-## Versioning
-
-Semantic, on the dataset rather than the code.
-
-| Change | Bump |
-| --- | --- |
-| Metadata, formatting, a non-semantic preprocessing fix | patch — `v0.1.0` → `v0.1.1` |
-| New reviewed examples, wider coverage, same contract | minor — `v0.1.x` → `v0.2.0` |
-| Task definitions, schema assumptions, preprocessing behaviour, or research interpretation changes | major — `v0.x` → `v1.0.0` |
-
-Every release carries a `CHANGELOG` entry, a manifest content hash, per-file
-hashes, the split configuration, and the pinned contract commit.
+This has a cost: data cannot be removed from an existing release.
 
 ## Deletion requests
 
 If someone asks for their data to be removed, and applicable policy or law
-requires honouring it, three things are true and they are not the same:
+requires it, the response depends on where the data is:
 
-**Future releases.** Straightforward. Identify the affected candidates via
-`staging/`, delete them, rebuild. The provenance record on each promoted example
-carries enough to trace it back.
+| Scope | Response |
+| --- | --- |
+| Future releases | Remove the affected candidates from `staging/`, using the promoted audit records and `index.jsonl` to find them, and rebuild under a new version |
+| Existing releases | Publish a new version without the material, and decide whether to withdraw the old version from wherever it was shared |
+| Trained models | Deleting data does not remove what a model learned from it. Retrain from a corrected release, or document that the checkpoint retains the material. |
 
-**Active releases.** A release cannot be edited. The response is a *new version*
-with the material removed, plus a decision about whether the old version is
-withdrawn from wherever it was shared. Withdrawal is a communication problem, not
-a technical one.
+The pipeline makes the affected releases identifiable. Every release is
+content-hashed, and every promoted example has an audit record that ties it to
+its capture batch, lane, scenario and decision record.
 
-**Trained checkpoints.** A model trained on the data cannot be edited either.
-Deleting the source does not remove what a model learned from it. The honest
-options are retraining from a corrected release, or accepting and documenting
-that a checkpoint retains it.
-
-**This repository does not pretend deleting a JSON file solves this.** What it
-provides is the ability to answer *which* releases and *which* checkpoints are
-affected, which is the part that is actually tractable.
-
-Because the current pipeline promotes only `synthetic` and `mock_backend` lanes —
-never `production_observation` — no release built so far contains anyone's data,
-and no deletion request can apply to one. That is a deliberate consequence of the
-lane design, not luck.
+Every release built so far comes from synthetic scenarios captured through the
+offline mock backend, so none contains data from real users and no deletion
+request can apply to one.
 
 ## Incidents
 
-See `docs/incident-response.md`.
+Exposed credentials, personal data found in a release, and consent problems are
+handled by the runbooks in [docs/incident-response.md](docs/incident-response.md).
+
+## Related documentation
+
+- [PRIVACY.md](PRIVACY.md): the privacy policy and its guarantees
+- [SECURITY.md](SECURITY.md): reporting issues and handling credentials
+- [docs/dataset-lifecycle.md](docs/dataset-lifecycle.md): sealing, verification
+  and versioning
