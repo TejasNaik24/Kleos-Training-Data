@@ -1,28 +1,3 @@
-"""JSONL serialization, byte-identical to the public writer.
-
-The release artifact is bytes on disk, and this is the only thing that produces
-them. Ported from ``kleos_models.data.loaders.write_jsonl`` (loaders.py:412-424).
-
-Three details are load-bearing and none of them look it:
-
-``exclude_none=False``
-    Every optional field is emitted explicitly as ``null`` — ``"name": null`` on
-    every message, and a null for every unset variation axis. Dropping them
-    produces smaller, cleaner, *different* files.
-
-``sort_keys=True``
-    Keys are alphabetical, not field-declaration order.
-
-``ensure_ascii=False``
-    Non-ASCII survives as itself rather than as an escape sequence, so a
-    scenario written with real typography round-trips.
-
-A "cleaner" reimplementation changes every line of ``train.jsonl`` and therefore
-every file hash and the manifest's content hash.
-``tests/test_differential_writer.py`` compares our bytes against the public
-writer's over the whole fixture corpus.
-"""
-
 from __future__ import annotations
 
 import json
@@ -37,7 +12,6 @@ from kleos_training_data.errors import ContractViolationError
 
 
 def dumps_example(example: BaseModel | dict[str, Any]) -> str:
-    """Serialize one example to a single JSONL line, including its newline."""
     payload = (
         example.model_dump(mode="json", exclude_none=False)
         if isinstance(example, BaseModel)
@@ -47,11 +21,6 @@ def dumps_example(example: BaseModel | dict[str, Any]) -> str:
 
 
 def write_jsonl(examples: Iterable[BaseModel | dict[str, Any]], path: Path | str) -> Path:
-    """Write examples to JSONL, creating parent directories.
-
-    Returns:
-        The path written.
-    """
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
     with target.open("w", encoding="utf-8") as handle:
@@ -61,12 +30,6 @@ def write_jsonl(examples: Iterable[BaseModel | dict[str, Any]], path: Path | str
 
 
 def iter_jsonl(path: Path | str) -> Iterator[tuple[int, dict[str, Any]]]:
-    """Yield ``(line_number, object)`` for each non-blank line.
-
-    Blank lines are skipped silently, matching the public loader. A
-    pretty-printed JSON array is not valid JSONL and raises here rather than
-    producing one enormous "example".
-    """
     target = Path(path)
     with target.open(encoding="utf-8") as handle:
         for number, line in enumerate(handle, start=1):
@@ -93,11 +56,6 @@ def iter_jsonl(path: Path | str) -> Iterator[tuple[int, dict[str, Any]]]:
 
 
 def read_examples(path: Path | str) -> list[TrainingExample]:
-    """Parse a JSONL file into validated training examples.
-
-    Strict by design: one invalid line fails the read. This is used to verify a
-    sealed release, where "most of the file parsed" is not a useful outcome.
-    """
     examples: list[TrainingExample] = []
     for number, payload in iter_jsonl(path):
         try:
@@ -116,12 +74,5 @@ def read_examples(path: Path | str) -> list[TrainingExample]:
 
 
 def round_trips(example: TrainingExample) -> bool:
-    """Whether an example survives serialization and re-parsing unchanged.
-
-    Promotion gate G14 uses this. It catches the case where a value is
-    representable in memory but not in JSON — a float that loses precision, a
-    dict key that is not a string — which would otherwise surface as a release
-    that verifies on the way out and fails on the way in.
-    """
     reparsed = TrainingExample.model_validate(json.loads(dumps_example(example)))
     return dumps_example(reparsed) == dumps_example(example)

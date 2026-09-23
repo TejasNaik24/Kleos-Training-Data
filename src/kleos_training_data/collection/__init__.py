@@ -1,10 +1,3 @@
-"""Capture candidate material from a backend, or generate it locally.
-
-The collection layer produces *candidates*, never trusted training data.
-Everything it emits lands in ``staging/raw`` marked with its capture lane, and
-nothing reaches a dataset without passing every promotion gate.
-"""
-
 from __future__ import annotations
 
 from kleos_training_data.collection.adapters import (

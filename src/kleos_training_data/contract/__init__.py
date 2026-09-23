@@ -1,12 +1,3 @@
-"""Mirror of the public kleos-models dataset contract.
-
-Nothing outside this package should reach for the public repository. Everything
-the pipeline needs to *produce* a release — the models, the JSONL bytes, the
-vocabulary — is here, so the pipeline runs with kleos-models absent.
-
-See :mod:`.pin` for what the mirror is pinned to and how to update it.
-"""
-
 from __future__ import annotations
 
 from kleos_training_data.contract.constants import (

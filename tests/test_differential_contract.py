@@ -1,27 +1,3 @@
-"""The contract mirror is identical to the pinned public implementation.
-
-These are the tests that make the mirror defensible. Without them, "we ported it
-faithfully" is an assertion; with them it is a checked property.
-
-They run only where ``kleos-models`` is installed::
-
-    make install-compat
-
-A **skip is a degraded run, not a pass.** CI installs the pinned extra and runs
-``check_contract_compat.py --strict``, which treats a skip as failure. Locally
-skipping is correct: the offline pipeline must be workable without the public
-repo checked out.
-
-What is compared:
-
-* the vocabulary, element-wise **and order-wise**
-* the JSONL bytes, over the whole fixture corpus
-* accept/reject decisions, over every valid and invalid case
-* ``stable_rank`` and ``normalize_text``, the two ported functions whose
-  divergence would make the repositories disagree about the same data without
-  anything crashing
-"""
-
 from __future__ import annotations
 
 import random
@@ -39,12 +15,6 @@ pytestmark = pytest.mark.requires_kleos_models
 
 
 class TestVocabulary:
-    """The early-warning detector.
-
-    A newly registered task or source type fails here long before any byte-level
-    test notices, because the byte tests only exercise values we already use.
-    """
-
     @pytest.mark.parametrize("name", MIRRORED_CONSTANTS)
     def test_constant_is_identical(self, name: str) -> None:
         from kleos_models import constants as public
@@ -59,12 +29,6 @@ class TestVocabulary:
 
     @pytest.mark.parametrize("name", MIRRORED_CONSTANTS)
     def test_constant_ordering_is_identical(self, name: str) -> None:
-        """Order looks cosmetic and is not.
-
-        It decides how `holdout_values` sorts and how a coverage report
-        enumerates cells, so a reordered tuple changes an artifact without
-        changing a single value.
-        """
         from kleos_models import constants as public
 
         mine = getattr(mirror_constants, name)
@@ -128,11 +92,6 @@ class TestValidationDecisions:
 
     @pytest.mark.parametrize("name", sorted(INVALID_CASES))
     def test_the_failing_field_paths_match(self, name: str) -> None:
-        """Agreeing on *what* is wrong, not merely *that* something is.
-
-        Two validators can both reject a payload for different reasons and still
-        diverge on the next payload. Comparing the locations catches that.
-        """
         from kleos_models.data.schemas import TrainingExample as PublicExample
         from pydantic import ValidationError
 
@@ -192,8 +151,6 @@ class TestDerivedViews:
 
 
 class TestPortedFunctions:
-    """The two functions whose divergence would be completely silent."""
-
     def test_stable_rank_matches_over_many_keys(self) -> None:
         from kleos_models.data.splitting import _stable_rank
 
@@ -231,7 +188,6 @@ class TestPortedFunctions:
         assert normalize_text(text) == public_normalize(text)
 
     def test_the_digit_collapse_is_reproduced(self) -> None:
-        """Changing only a number does not make a scenario new — on both sides."""
         from kleos_models.data.leakage import normalize_text as public_normalize
 
         a, b = "Deadline: Mar 3", "Deadline: Mar 7"
@@ -239,8 +195,6 @@ class TestPortedFunctions:
 
 
 class TestPublicLoaderAcceptsOurOutput:
-    """The end the whole mirror exists to serve."""
-
     def test_the_public_loader_reads_a_file_we_wrote(self, tmp_path) -> None:
         from kleos_models.data.loaders import load_examples
 

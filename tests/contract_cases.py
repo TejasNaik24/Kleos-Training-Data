@@ -1,18 +1,3 @@
-"""A shared corpus of contract-valid and contract-invalid payloads.
-
-Used twice, and that is the point:
-
-* ``test_contract_schemas.py`` asserts the mirror's own behaviour, and runs
-  everywhere.
-* ``test_differential_schema_decisions.py`` asserts the pinned public models
-  reach the *same* verdict on every one of these, and runs only where
-  kleos-models is installed.
-
-Keeping one corpus means a case added to pin down a bug is automatically checked
-for agreement too, rather than only being checked against our own reimplementation
-of the rule it came from.
-"""
-
 from __future__ import annotations
 
 from typing import Any
@@ -21,7 +6,6 @@ VALID_ID = "kx-npr-3f9a1c8e2b7d0456"
 
 
 def base(**overrides: Any) -> dict[str, Any]:
-    """A minimal valid payload, with overrides applied."""
     payload: dict[str, Any] = {
         "id": VALID_ID,
         "task": "notification_prioritization",
@@ -39,7 +23,6 @@ def _messages(*pairs: tuple[str, str]) -> list[dict[str, Any]]:
     return [{"role": role, "content": content} for role, content in pairs]
 
 
-#: name -> payload that MUST validate.
 VALID_CASES: dict[str, dict[str, Any]] = {
     "minimal": base(),
     "with_system": base(
@@ -90,7 +73,6 @@ VALID_CASES: dict[str, dict[str, Any]] = {
 }
 
 
-#: name -> (payload that MUST be rejected, substring expected in the error).
 INVALID_CASES: dict[str, tuple[dict[str, Any], str]] = {
     "unknown_task": (base(task="summarization"), "unknown task"),
     "id_too_short": (base(id="ab"), "id"),

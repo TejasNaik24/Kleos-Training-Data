@@ -1,16 +1,3 @@
-#!/usr/bin/env python3
-"""Capture scenario points from a backend into staging/raw.
-
-    python scripts/capture_backend.py --adapter mock --out-batch slice-001
-
-The default adapter is ``mock``: it touches no network, is deterministic, and is
-what the test suite and CI use. Capturing against a real deployment is gated —
-see ``collection/guard.py`` — and produces material that can never be promoted,
-because the KLEOS backend answers from the authenticated user's own stored data.
-
-Nothing here logs a prompt or an answer. Logs get pasted into issues.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -31,9 +18,7 @@ from kleos_training_data.scenarios.loader import DEFAULT_CATALOG_DIR, load_catal
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
-    )
+    parser = argparse.ArgumentParser()
     parser.add_argument("--adapter", default="mock", help="Backend adapter (default: mock).")
     parser.add_argument("--out-batch", required=True, metavar="ID", help="Batch identifier.")
     parser.add_argument("--scenarios", type=Path, help="Catalog root (default: scenarios/).")

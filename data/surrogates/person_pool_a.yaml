@@ -1,11 +1,3 @@
-# Fictional person names, for surrogate substitution.
-#
-# Every name here is invented and deliberately generic. None refers to a real
-# person — see PRIVACY.md, "Fixture policy".
-#
-# Deliberately plain: a distinctive name is a memorable name, and a memorable
-# surrogate recreates exactly the persistent pseudo-entity the surrogate scheme
-# exists to prevent.
 kind: person
 values:
   - Dana Whitfield

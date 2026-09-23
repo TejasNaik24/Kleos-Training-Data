@@ -1,10 +1,3 @@
-"""Everything a gate needs to judge one candidate.
-
-Assembled once and passed to every gate, so no gate does its own I/O. That keeps
-gates pure functions of a value, which is what makes each one testable against a
-hand-built context rather than against a populated staging directory.
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -17,7 +10,7 @@ from kleos_training_data.contract.dedup import (
     DuplicateFinding,
     conversation_text,
 )
-from kleos_training_data.contract.schemas import TrainingExample
+from kleos_training_data.contract.schemas import ExampleMetadata, TrainingExample
 from kleos_training_data.contract.writer import round_trips
 from kleos_training_data.ids import CollisionLedger
 from kleos_training_data.privacy.detect import Detection, scan_payload
@@ -31,8 +24,6 @@ from kleos_training_data.staging.records import SanitizedCandidate
 
 @dataclass
 class PromotionContext:
-    """One candidate, plus everything needed to decide about it."""
-
     candidate: SanitizedCandidate
     privacy: dict[str, Any] | None
     human: HumanDecision | None
@@ -44,8 +35,6 @@ class PromotionContext:
     min_mean_score: float = 3.0
     near_duplicate_threshold: float = 0.85
     allowed_sources: frozenset[str] = field(default_factory=lambda: frozenset({"synthetic"}))
-
-    # --- cached derivations -------------------------------------------------
 
     _residual: list[Detection] | None = field(default=None, init=False, repr=False)
 
@@ -65,13 +54,6 @@ class PromotionContext:
 
     @property
     def residual_detections(self) -> list[Detection]:
-        """Detections in the *sanitized* payload.
-
-        Re-scanned here rather than trusted from the sanitization record. The
-        record says what sanitization believed; this says what is actually in the
-        bytes about to be promoted, which is the only thing that matters at this
-        point.
-        """
         if self._residual is None:
             self._residual = scan_payload(self.payload)
         return self._residual
@@ -84,7 +66,6 @@ class PromotionContext:
         return ", ".join(sorted({s.rule_id for s in assess(self.payload).signals})) or "(none)"
 
     def schema_error(self) -> str | None:
-        """The contract error, or ``None`` when it validates."""
         try:
             TrainingExample.model_validate(self.as_example())
         except Exception as exc:
@@ -92,7 +73,6 @@ class PromotionContext:
         return None
 
     def as_example(self) -> dict[str, Any]:
-        """The payload in final contract shape, with id and metadata attached."""
         metadata = {
             "source": self.source,
             "quality_status": "reviewed",
@@ -132,14 +112,7 @@ class PromotionContext:
         return sorted(set(axes) - set(VARIATION_AXES))
 
     def disallowed_metadata_extras(self) -> list[str]:
-        """Metadata keys that are neither contract fields nor allowlisted.
-
-        ``ExampleMetadata`` is ``extra="allow"`` upstream, so anything here ships
-        inside ``train.jsonl``. A stray ``capture_id`` or ``input_hash`` would be
-        a live pointer back into the staging zone, surviving into whatever the
-        release is shared with.
-        """
-        known = set(TrainingExample.model_fields["metadata"].annotation.model_fields)  # type: ignore[union-attr]
+        known = set(ExampleMetadata.model_fields)
         extras = set(self.as_example()["metadata"]) - known
         return sorted(extras - ALLOWED_METADATA_EXTRAS)
 
@@ -161,17 +134,6 @@ class PromotionContext:
         return self.corpus.find_duplicates(self._entry(), threshold=self.near_duplicate_threshold)
 
     def leakage_findings(self) -> list[DuplicateFinding]:
-        """Overlap with held-out evaluation material.
-
-        Run twice, deliberately. The public ``conversation_text`` includes the
-        assistant turn for a training example but is prompt-only for an
-        evaluation example, so a single comparison is asymmetric exactly where it
-        matters most — a training candidate whose *prompt* matches an eval prompt
-        is leakage regardless of what the answers say.
-
-        The first pass matches public semantics so our verdict is never weaker
-        than theirs; the second compares prompt to prompt.
-        """
         full = self.corpus_scan(self.eval_corpus, include_assistant=True)
         prompt_only = self.corpus_scan(self.eval_corpus, include_assistant=False)
 
@@ -196,6 +158,6 @@ class PromotionContext:
         return index.find_duplicates(entry, threshold=self.near_duplicate_threshold)
 
     def verdict(self) -> ReviewVerdict:
-        if self.human is None:  # pragma: no cover - guarded by G08/G09
+        if self.human is None:
             raise ValueError("no human decision")
         return combine(self.machine, self.human, min_mean_score=self.min_mean_score)

@@ -28,8 +28,6 @@ prompt:
   framing: workspace
   workspace_names: [School, Research, Personal, Startup]
   out_of_scope_count: 1
-  # The whole point of the family: what is inside the active workspace cannot
-  # answer, and what is outside it can.
   out_of_scope_stronger: true
   question: "Can you answer this from what is in the active workspace?"
   item_noun: item

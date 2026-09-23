@@ -1,19 +1,3 @@
-"""Raw capture -> contract-shaped candidate.
-
-Normalization is **deterministic and non-semantic**. It fixes transport and
-presentation artifacts: line endings, wrapper envelopes, reasoning spans the
-public formatter strips anyway, trailing whitespace. It does not touch meaning.
-
-Semantic rewriting belongs to sanitization and review, where it is recorded as a
-transformation and re-reviewed. The rule the whole pipeline depends on:
-
-    **Never silently change an assistant answer and then present it as the
-    original model output.**
-
-Every change made here is appended to ``transformations`` on the candidate, so a
-reviewer can see what was done to the text before they read it.
-"""
-
 from __future__ import annotations
 
 from typing import Any
@@ -28,7 +12,6 @@ from kleos_training_data.staging.records import (
 
 
 def _normalize_text(text: str) -> tuple[str, list[str]]:
-    """Clean transport artifacts. Returns the text and what changed."""
     changes: list[str] = []
 
     if "\r" in text:
@@ -56,12 +39,6 @@ def normalize_capture(
     perturbation_of: str | None = None,
     perturbation_kind: str | None = None,
 ) -> NormalizedCandidate:
-    """Turn one raw capture into a contract-shaped candidate.
-
-    Raises:
-        ContractViolationError: If the capture cannot produce a valid example —
-            an empty answer, most often, which means the stream was truncated.
-    """
     answer, changes = _normalize_text(capture.answer_text)
     if not answer.strip():
         raise ContractViolationError(
@@ -122,12 +99,6 @@ def candidate_from_payload(
     perturbation_of: str | None = None,
     perturbation_kind: str | None = None,
 ) -> NormalizedCandidate:
-    """Build a candidate directly from a generated payload.
-
-    The synthetic lane has no transport to normalize — the text was rendered
-    locally from the policy — so it skips the raw stage entirely rather than
-    round-tripping through a fake capture to look symmetrical.
-    """
     normalized_messages = []
     changes: list[str] = []
     for message in payload["messages"]:

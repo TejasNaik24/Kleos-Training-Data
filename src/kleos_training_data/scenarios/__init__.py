@@ -1,10 +1,3 @@
-"""Scenario definition, sampling and generation.
-
-A scenario declares a *situation family* and the policy that resolves it. The
-training target is computed from that policy, never authored beside the prompt
-and never taken from a model's own output — see :mod:`.policies`.
-"""
-
 from __future__ import annotations
 
 from kleos_training_data.scenarios.generator import (

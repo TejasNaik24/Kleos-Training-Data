@@ -1,5 +1,3 @@
-"""Run the gates, and refuse to believe a run that skipped one."""
-
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -19,8 +17,6 @@ from kleos_training_data.promotion.policy import PromotionPolicy
 
 @dataclass(frozen=True)
 class GateResult:
-    """One gate's outcome, with its identity attached."""
-
     gate_id: str
     status: GateStatus
     message: str
@@ -37,8 +33,6 @@ class GateResult:
 
 @dataclass
 class PromotionReport:
-    """Every gate's verdict for one candidate."""
-
     candidate_id: str
     results: list[GateResult] = field(default_factory=list)
 
@@ -56,7 +50,6 @@ class PromotionReport:
 
     @property
     def privacy_failures(self) -> list[GateResult]:
-        """Failures that are an incident rather than a quality problem."""
         return [r for r in self.failures if r.gate_id in PRIVACY_GATE_IDS]
 
     def ok(self, *, strict_warnings: bool = False) -> bool:
@@ -90,18 +83,6 @@ class PromotionReport:
 
 
 def run_gates(ctx: PromotionContext, policy: PromotionPolicy) -> PromotionReport:
-    """Run every gate in order and collect the results.
-
-    **No short-circuit.** A candidate with three problems reports all three, so
-    fixing them takes one cycle instead of three. The cost is a few wasted checks
-    on a doomed candidate, which is cheap.
-
-    Raises:
-        PromotionIntegrityError: If any mandatory gate did not execute. This is
-            mechanism #4: it catches a refactor that deleted a gate from the
-            table or short-circuited the loop, where the *absence* of a check
-            would otherwise be indistinguishable from a pass.
-    """
     report = PromotionReport(candidate_id=ctx.candidate.candidate_id)
     executed: set[str] = set()
 
@@ -115,9 +96,6 @@ def run_gates(ctx: PromotionContext, policy: PromotionPolicy) -> PromotionReport
         try:
             outcome: GateOutcome = spec.check(ctx)
         except Exception as exc:
-            # A gate that raises must not be treated as absent, and must not
-            # take the run down either: the other thirteen still have something
-            # to say about this candidate.
             outcome = GateOutcome(
                 GateStatus.FAIL,
                 f"the gate raised {type(exc).__name__}",
@@ -142,7 +120,7 @@ def run_gates(ctx: PromotionContext, policy: PromotionPolicy) -> PromotionReport
         )
 
     bypassed_mandatory = {r.gate_id for r in report.bypassed} & MANDATORY_GATE_IDS
-    if bypassed_mandatory:  # pragma: no cover - PromotionPolicy makes this unreachable
+    if bypassed_mandatory:
         raise PromotionIntegrityError(
             f"mandatory gate(s) {sorted(bypassed_mandatory)} were bypassed.",
             suggestions=["PromotionPolicy should have made this impossible to construct."],

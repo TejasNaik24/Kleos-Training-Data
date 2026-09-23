@@ -1,15 +1,3 @@
-#!/usr/bin/env python3
-"""Assemble sanitized candidates into a reviewer packet.
-
-    python scripts/build_review_packet.py --batch slice-001
-
-Writes ``packet.md`` for a human, ``packet.jsonl`` for a machine reviewer, and
-``packet.meta.json`` carrying the response schema.
-
-The packet is the one place candidate text is meant to be read. That is why logs
-and reports never carry content — there is somewhere proper to look.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -38,7 +26,6 @@ from kleos_training_data.staging.store import iter_records
 
 
 def _promoted_corpus(workspace: Workspace) -> dict[str, str]:
-    """Already-promoted examples, as flat text, for neighbour comparison."""
     corpus: dict[str, str] = {}
     for record in iter_records(workspace.staging / "promoted", PromotedExample):
         example = record.example
@@ -49,9 +36,7 @@ def _promoted_corpus(workspace: Workspace) -> dict[str, str]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
-    )
+    parser = argparse.ArgumentParser()
     add_batch_argument(parser)
     parser.add_argument("--packet-id", help="Packet identifier (default: pk-<batch>).")
     parser.add_argument("--max-candidates", type=int, help="Cap the packet size.")

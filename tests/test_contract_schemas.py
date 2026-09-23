@@ -1,10 +1,3 @@
-"""The contract mirror accepts and rejects what the public repo does.
-
-These tests run everywhere. Their differential counterpart —
-``test_differential_schema_decisions.py`` — asserts the pinned public models
-agree with every verdict here, and runs only where kleos-models is installed.
-"""
-
 from __future__ import annotations
 
 import pytest
@@ -37,7 +30,6 @@ class TestValidExamples:
         assert TrainingExample.model_validate(base()).version == "1.0"
 
     def test_domain_is_mirrored_from_the_axes_when_absent(self) -> None:
-        """The public writer emits `domain` explicitly, so the auto-fill changes bytes."""
         example = TrainingExample.model_validate(base(variation_axes={"domain": "research"}))
         assert example.domain == "research"
 
@@ -60,7 +52,6 @@ class TestRejectedExamples:
 
     @pytest.mark.parametrize("name", sorted(INVALID_CASES))
     def test_the_error_names_the_problem(self, name: str) -> None:
-        """An error a reviewer cannot act on is barely better than no error."""
         payload, expected = INVALID_CASES[name]
         with pytest.raises(ValidationError) as caught:
             TrainingExample.model_validate(payload)
@@ -70,13 +61,6 @@ class TestRejectedExamples:
 
 
 class TestExtraFieldPolicy:
-    """Closed where the public repo is closed, open where it is open.
-
-    Getting either backwards is silent: a closed model that should be open
-    rejects a legitimate release, and an open model that should be closed ships
-    fields the public loader then refuses.
-    """
-
     def test_example_is_closed(self) -> None:
         with pytest.raises(ValidationError):
             TrainingExample.model_validate(base(capture_id="cap-123"))
@@ -90,18 +74,12 @@ class TestExtraFieldPolicy:
         assert axes.as_dict()["pilot_axis"] == "v1"
 
     def test_metadata_is_open(self) -> None:
-        """Open upstream — which is exactly why promotion gate G14 closes it.
-
-        Anything here ships inside train.jsonl, so a stray capture_id would be a
-        pointer back into staging/ surviving into a shared artifact.
-        """
         example = TrainingExample.model_validate(
             base(metadata={"source": "synthetic", "leaked": "capture-123"})
         )
         assert example.metadata.model_extra == {"leaked": "capture-123"}
 
     def test_manifest_is_closed(self) -> None:
-        """One extra key makes the public loader raise at train time."""
         with pytest.raises(ValidationError):
             DatasetManifest.model_validate({"version": "v1", "provenance": {}})
 
@@ -124,7 +102,6 @@ class TestVocabularies:
 
 class TestDerivedViews:
     def test_group_key_falls_back_through_group_id_then_family_then_id(self) -> None:
-        """The fallback chain is what guarantees every example is in exactly one group."""
         payload = base(metadata={"group_id": "g1", "scenario_family": "fam"})
         assert TrainingExample.model_validate(payload).group_key() == "g1"
 
@@ -143,7 +120,6 @@ class TestDerivedViews:
         assert "assistant:" not in example.conversation_text(include_assistant=False)
 
     def test_content_hash_ignores_id_and_metadata(self) -> None:
-        """The public notion of content identity, used for dedup parity."""
         a = TrainingExample.model_validate(base(id="kx-npr-1111111111111111"))
         b = TrainingExample.model_validate(
             base(id="kx-npr-2222222222222222", metadata={"notes": "different"})
@@ -164,13 +140,10 @@ class TestDerivedViews:
 
 
 class TestReasoningStripping:
-    """Reasoning spans never become training targets."""
-
     def test_a_well_formed_block_is_removed(self) -> None:
         assert strip_reasoning("<think>weighing options</think>Item A.") == "Item A."
 
     def test_a_dangling_close_tag_is_removed(self) -> None:
-        """Qwen Thinking templates pre-open <think>, so only the close tag appears."""
         assert strip_reasoning("weighing options</think>Item A.") == "Item A."
 
     def test_plain_text_is_untouched(self) -> None:
@@ -198,7 +171,6 @@ class TestDatasetManifest:
         assert DatasetManifest.model_validate({"version": "kleos-policy-v0.1.0"}).example_count == 0
 
     def test_content_hash_covers_file_hashes_only(self) -> None:
-        """Covering anything else would diverge from the public split_dataset.py."""
         a = DatasetManifest(version="v1", file_hashes={"train.jsonl": "abc"})
         b = DatasetManifest(
             version="v2", description="different", file_hashes={"train.jsonl": "abc"}

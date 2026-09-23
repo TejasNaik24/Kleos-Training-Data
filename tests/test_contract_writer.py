@@ -1,11 +1,3 @@
-"""The JSONL writer emits the exact bytes the public loader expects.
-
-A release is bytes on disk. Everything downstream — the file hashes, the
-manifest content hash, whether the public trainer can read it at all — is
-determined here, and every property below is one a "cleaner" reimplementation
-would quietly break.
-"""
-
 from __future__ import annotations
 
 import json
@@ -35,12 +27,6 @@ class TestByteFormat:
         assert keys == sorted(keys)
 
     def test_nulls_are_emitted_explicitly(self) -> None:
-        """`exclude_none=False` is not incidental — it is most of the file.
-
-        Every message carries "name": null and every unset axis carries a null.
-        Dropping them produces a smaller, cleaner, *different* file whose hash
-        matches nothing.
-        """
         payload = json.loads(dumps_example(_example()))
         assert payload["messages"][0]["name"] is None
         assert "urgency" in payload["variation_axes"]
@@ -83,7 +69,6 @@ class TestRoundTrip:
 
     def test_writing_then_reading_preserves_the_corpus(self, tmp_path) -> None:
         examples = [TrainingExample.model_validate(p) for p in VALID_CASES.values()]
-        # Ids must be unique for a real release; here we only need parse fidelity.
         path = write_jsonl(examples, tmp_path / "train.jsonl")
         assert [e.model_dump() for e in read_examples(path)] == [e.model_dump() for e in examples]
 
@@ -107,7 +92,6 @@ class TestFileWriting:
         assert len(path.read_text(encoding="utf-8").splitlines()) == 5
 
     def test_writing_is_deterministic(self, tmp_path) -> None:
-        """Two writes of the same examples must hash identically."""
         examples = [_example()]
         first = write_jsonl(examples, tmp_path / "a.jsonl").read_bytes()
         second = write_jsonl(examples, tmp_path / "b.jsonl").read_bytes()
@@ -123,7 +107,6 @@ class TestReading:
         assert len(list(iter_jsonl(path))) == 2
 
     def test_a_pretty_printed_array_is_rejected(self, tmp_path) -> None:
-        """JSONL is one object per line. An array is a common, silent mistake."""
         path = tmp_path / "train.jsonl"
         path.write_text(json.dumps([base()], indent=2), encoding="utf-8")
         with pytest.raises(ContractViolationError, match="not valid JSON"):

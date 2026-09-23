@@ -1,11 +1,3 @@
-"""Invariants for the v0.0.6 repairs.
-
-Each test pins a property whose violation produced a defect class in v0.0.5, and
-each is written so that reverting the repair makes it fail. They test properties
-rather than counts: a distribution can move for legitimate reasons, but
-scale-invariance either holds or it does not.
-"""
-
 from __future__ import annotations
 
 import pytest
@@ -38,16 +30,11 @@ def generated():
 
 
 class TestCloseCallIsScaleInvariant:
-    """Class G. The absolute margin made 'ambiguous' a property of how far away
-    the deadlines were rather than of the decision."""
-
     @pytest.mark.parametrize("scale", [1, 3, 7, 14, 30, 60])
     def test_the_same_relative_gap_gives_the_same_answer_at_every_scale(self, scale: int) -> None:
-        """The exact counterexample from the Pass-3 audit, generalised."""
         a = Item("item_a", "A", scale, "confirmed", "high", "")
         b = Item("item_b", "B", scale * 2 + 1, "confirmed", "high", "")
         decisions = {rank_or_abstain_when_close(sit(a, b)).abstained}
-        # Re-derive at every other scale; all must agree.
         for other in (1, 3, 7, 14, 30, 60):
             x = Item("item_a", "A", other, "confirmed", "high", "")
             y = Item("item_b", "B", other * 2 + 1, "confirmed", "high", "")
@@ -89,9 +76,6 @@ class TestCloseCallIsScaleInvariant:
 
 
 class TestTheTwoUnderdeterminationConcepts:
-    """Class D. One overloaded policy answered confidently against prompts that
-    said the user did not know what they were asking for."""
-
     def test_referential_ambiguity_asks_regardless_of_evidence_strength(self) -> None:
         strong = (
             Item("item_a", "A", 1, "confirmed", "high", ""),
@@ -141,9 +125,6 @@ class TestTheTwoUnderdeterminationConcepts:
 
 
 class TestDecisionBThresholds:
-    """Decision B named no thresholds, so the case it legislates could not be
-    generated and the corpus contained zero examples of it."""
-
     def test_the_thresholds_are_defined_and_deterministic(self) -> None:
         assert isinstance(STALE_AFTER_DAYS, int) and STALE_AFTER_DAYS > 0
         assert 0.0 < STRONG_CONFLICT_MIN_EVIDENCE <= 1.0
@@ -159,7 +140,6 @@ class TestDecisionBThresholds:
         assert d.deciding_factor == "stale_explicit_conflict" and d.abstained
 
     def test_a_fresh_explicit_statement_is_not_surfaced(self) -> None:
-        """Negative boundary: the statement is recent, so nothing to surface."""
         d = defer_to_explicit_statement(
             sit(
                 Item("item_a", "Stated", 2, "confirmed", "high", ""),
@@ -170,8 +150,6 @@ class TestDecisionBThresholds:
         assert d.deciding_factor == "explicit_statement" and not d.abstained
 
     def test_weakly_conflicting_evidence_does_not_trigger_surfacing(self) -> None:
-        """Negative boundary, and the reason the five v0.0.5 cases flagged in
-        Pass 3 were correct behaviour: `single_source` is not strong conflict."""
         d = defer_to_explicit_statement(
             sit(
                 Item("item_a", "Stated", STALE_AFTER_DAYS + 15, "confirmed", "high", ""),
@@ -187,8 +165,6 @@ class TestDecisionBThresholds:
 
 
 class TestExplanationsAreVerifiedNotAsserted:
-    """Class F. The ranking was right and the stated reason was false."""
-
     def test_no_answer_claims_comparability_it_has_not_checked(self, generated) -> None:
         bad = []
         for _s, c in generated:
@@ -210,7 +186,6 @@ class TestExplanationsAreVerifiedNotAsserted:
         assert not bad, f"{len(bad)} answer(s) assert a comparability that does not hold"
 
     def test_no_resolver_asks_to_confirm_something_already_confirmed(self, generated) -> None:
-        """Class E, which was a symptom of the absolute margin plus this resolver."""
         import re
 
         bad = []

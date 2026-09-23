@@ -1,25 +1,3 @@
-"""The production capture guard.
-
-The KLEOS backend answers from the *authenticated user's own* stored projects,
-memories and notifications. It is not a scenario simulator: every capture from a
-real deployment is one person's private data, whatever the prompt was.
-
-So capturing against a non-local backend requires **all** of these at once:
-
-1. ``--allow-production`` on the command line
-2. ``KLEOS_ALLOW_PRODUCTION_CAPTURE=1`` in the environment
-3. The exact confirmation phrase, typed
-4. ``CI`` unset
-
-Four independent conditions because any one alone is something a person can do
-by accident or a script can inherit. The fourth is **not overridable**: an
-automated production capture is never legitimate, and a flag that could disable
-that check would eventually be set in a workflow file and forgotten.
-
-The error names which conditions failed. It deliberately never names a way to
-turn the guard off.
-"""
-
 from __future__ import annotations
 
 import re
@@ -30,8 +8,6 @@ from urllib.parse import urlparse
 
 from kleos_training_data.errors import ProductionGuardError
 
-#: Hosts treated as local development. Anything else is production until proven
-#: otherwise — the default has to be the safe one.
 LOCAL_HOST_PATTERNS: Final[tuple[re.Pattern[str], ...]] = (
     re.compile(r"^127\.0\.0\.1$"),
     re.compile(r"^localhost$"),
@@ -41,18 +17,14 @@ LOCAL_HOST_PATTERNS: Final[tuple[re.Pattern[str], ...]] = (
     re.compile(r"^[\w-]+\.test$"),
 )
 
-#: Scheme used by the offline mock adapter, which touches no network at all.
 MOCK_SCHEME: Final[str] = "mock"
 
-#: Typed in full, by a human, every time. Long enough that it cannot be muscle
-#: memory and specific enough that it states what is actually happening.
 CONFIRM_PHRASE: Final[str] = "I understand this captures real personal data"
 
 ENV_ALLOW: Final[str] = "KLEOS_ALLOW_PRODUCTION_CAPTURE"
 
 
 def is_local(base_url: str) -> bool:
-    """Whether a URL points at a local development backend or the mock."""
     parsed = urlparse(base_url)
     if parsed.scheme == MOCK_SCHEME:
         return True
@@ -62,12 +34,6 @@ def is_local(base_url: str) -> bool:
 
 @dataclass(frozen=True)
 class CaptureAuthorization:
-    """The audit record written when a production capture is permitted.
-
-    Records the host, never the full URL: a URL can carry a token in its query
-    string, and this file sits next to the batch it authorized.
-    """
-
     base_url_host: str
     authorized_at: str
     operator_role: str
@@ -101,15 +67,6 @@ def assert_capture_allowed(
     scenario_families: tuple[str, ...] = (),
     expected_captures: int = 0,
 ) -> CaptureAuthorization | None:
-    """Permit or refuse a capture run.
-
-    Returns:
-        ``None`` for a local or mock backend, where no authorization is needed.
-        A :class:`CaptureAuthorization` when a production capture is permitted.
-
-    Raises:
-        ProductionGuardError: If any condition fails.
-    """
     if is_local(base_url):
         return None
 
@@ -131,7 +88,6 @@ def assert_capture_allowed(
     else:
         failures.append("the confirmation phrase was not given exactly")
 
-    # Unconditional and last, so it is the one that shows up in a CI log.
     if env.get("CI"):
         failures.append(
             "CI is set — an automated production capture is never legitimate, "

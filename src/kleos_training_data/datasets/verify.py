@@ -1,15 +1,3 @@
-"""Verify a sealed release by re-deriving everything from its bytes.
-
-Deliberately shares no code with the writer beyond parsing. A verifier that
-reuses the writer's computations proves the writer is self-consistent, which is
-not the question — the question is whether the files on disk say what the
-manifest claims.
-
-Every count, distribution and hash is recomputed from the JSONL, then compared
-against the manifest and the lock. Anything the writer got wrong, or anything
-that changed afterwards, shows up as a mismatch.
-"""
-
 from __future__ import annotations
 
 import json
@@ -32,8 +20,6 @@ from kleos_training_data.privacy.sanitize import scan_release_text
 
 @dataclass
 class VerificationReport:
-    """What verification found."""
-
     version: str
     path: Path
     problems: list[str] = field(default_factory=list)
@@ -71,12 +57,6 @@ class VerificationReport:
 
 
 def verify_release(directory: Path | str, *, strict: bool = False) -> VerificationReport:
-    """Re-derive a release from its bytes and compare against its own claims.
-
-    Args:
-        directory: The sealed release.
-        strict: Treat warnings as problems.
-    """
     path = Path(directory)
     report = VerificationReport(version=path.name, path=path)
 
@@ -84,7 +64,6 @@ def verify_release(directory: Path | str, *, strict: bool = False) -> Verificati
         report.add(f"{path} is not a directory")
         return report
 
-    # --- structure ---------------------------------------------------------
     report.checks_run += 1
     manifest_path = path / MANIFEST_FILENAME
     if not manifest_path.is_file():
@@ -103,7 +82,6 @@ def verify_release(directory: Path | str, *, strict: bool = False) -> Verificati
     if manifest.version != path.name:
         report.add(f"manifest version {manifest.version!r} does not match directory {path.name!r}")
 
-    # --- filenames ---------------------------------------------------------
     report.checks_run += 1
     allowed = set(SPLIT_FILENAMES.values())
     stray = sorted(p.name for p in path.glob("*.jsonl") if p.name not in allowed)
@@ -118,7 +96,6 @@ def verify_release(directory: Path | str, *, strict: bool = False) -> Verificati
         if not (path / SPLIT_FILENAMES[split]).is_file():
             report.add(f"{SPLIT_FILENAMES[split]} is required and missing")
 
-    # --- content -----------------------------------------------------------
     by_split: dict[str, list[TrainingExample]] = {}
     for split, filename in SPLIT_FILENAMES.items():
         target = path / filename
@@ -137,7 +114,6 @@ def verify_release(directory: Path | str, *, strict: bool = False) -> Verificati
     every = [example for examples in by_split.values() for example in examples]
     report.counts = {name: len(examples) for name, examples in by_split.items()}
 
-    # --- counts and distributions, recomputed ------------------------------
     report.checks_run += 1
     if manifest.example_count != len(every):
         report.add(
@@ -168,7 +144,6 @@ def verify_release(directory: Path | str, *, strict: bool = False) -> Verificati
         if getattr(manifest, field_name) != recomputed_value:
             report.add(f"manifest {field_name} does not match the content")
 
-    # --- integrity ---------------------------------------------------------
     report.checks_run += 1
     ids = [e.id for e in every]
     if len(set(ids)) != len(ids):
@@ -206,7 +181,6 @@ def verify_release(directory: Path | str, *, strict: bool = False) -> Verificati
             f"loader filters to reviewed by default, so these would be silently dropped."
         )
 
-    # --- hashes ------------------------------------------------------------
     for filename, claimed_hash in sorted(manifest.file_hashes.items()):
         report.checks_run += 1
         target = path / filename
@@ -224,7 +198,6 @@ def verify_release(directory: Path | str, *, strict: bool = False) -> Verificati
     if manifest.content_hash != manifest.compute_content_hash():
         report.add("manifest content_hash does not match its own file_hashes")
 
-    # --- lock --------------------------------------------------------------
     lock_path = path / RELEASE_LOCK_FILENAME
     if lock_path.is_file():
         report.checks_run += 1
@@ -246,7 +219,6 @@ def verify_release(directory: Path | str, *, strict: bool = False) -> Verificati
             f"{PROVENANCE_FILENAME} is absent; the release is not reproducible from itself"
         )
 
-    # --- privacy -----------------------------------------------------------
     for filename in sorted(manifest.file_hashes):
         target = path / filename
         if not target.is_file():

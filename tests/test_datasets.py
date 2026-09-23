@@ -1,17 +1,3 @@
-"""Splitting, holdouts, manifests, and the immutable sealed release.
-
-Two things carry the weight here.
-
-**Splits must be reproducible and non-leaking.** Determinism comes from stable
-hashing, so adding examples never reshuffles the existing ones — that property is
-what makes two dataset versions comparable at all.
-
-**Verification must be independent of the writer.** ``verify_release`` shares no
-computation with ``ReleaseWriter``; reusing it would only prove the writer is
-self-consistent, which is not the question. Every test below tampers with a
-sealed release and asserts verification notices.
-"""
-
 from __future__ import annotations
 
 import json
@@ -47,13 +33,6 @@ def make_example(index: int, **axes) -> TrainingExample:
             "source": "synthetic",
             "quality_status": "reviewed",
             "scenario_family": f"fam-{index % 3}",
-            # Four consecutive examples share a group, mirroring a base example
-            # plus its three perturbations.
-            #
-            # This has to produce genuinely multi-member groups. An earlier
-            # version keyed on (index % 3, index // 3), which is unique per
-            # index — every group was a singleton, so the group-isolation tests
-            # passed without ever exercising a group.
             "group_id": f"grp-{index // 4:04d}",
         },
     }
@@ -100,11 +79,6 @@ class TestSplitDeterminism:
         assert [e.id for e in first.test] == [e.id for e in second.test]
 
     def test_adding_examples_does_not_reshuffle_the_existing_ones(self) -> None:
-        """The property that makes two dataset versions comparable.
-
-        Stable hashing, not shuffling: an example's split depends only on its
-        group key and the seed.
-        """
         config = SplitConfig(strategy="group", seed=42)
         small = split_examples(corpus(12), config)
         large = split_examples(corpus(24), config)
@@ -134,12 +108,6 @@ class TestSplitDeterminism:
 
 class TestGroupIsolation:
     def test_the_fixture_actually_has_multi_member_groups(self) -> None:
-        """Guards the tests below from passing vacuously.
-
-        If every group were a singleton, grouped splitting would be
-        indistinguishable from random splitting and every isolation assertion
-        would hold trivially.
-        """
         from collections import Counter
 
         sizes = Counter(e.group_key() for e in corpus(30))
@@ -147,8 +115,6 @@ class TestGroupIsolation:
         assert len(sizes) < 30
 
     def test_a_group_never_straddles_a_boundary(self) -> None:
-        """A perturbation pair on both sides makes consistency testing
-        meaningless — it compares a memorized example against itself."""
         result = split_examples(corpus(30), SplitConfig(strategy="group", seed=7))
         placement: dict[str, str] = {}
         for name in ("train", "validation", "test"):
@@ -158,7 +124,6 @@ class TestGroupIsolation:
 
     def test_verify_split_catches_a_straddled_group(self) -> None:
         result = split_examples(corpus(30), SplitConfig(strategy="group", seed=7))
-        # Move one example across the boundary by hand.
         moved = result.train.pop()
         result.test.append(moved)
         with pytest.raises(ContractViolationError, match="split across"):
@@ -194,8 +159,6 @@ class TestHoldoutSplits:
         assert "json" not in {e.variation_axes.format for e in result.train}
 
     def test_validation_is_drawn_from_seen_values(self) -> None:
-        """Early stopping on OOD data would leak the very thing the test split
-        exists to measure."""
         result = split_examples(
             corpus(60),
             SplitConfig(
@@ -210,7 +173,6 @@ class TestHoldoutSplits:
         assert "json" not in {e.variation_axes.format for e in result.validation}
 
     def test_an_unknown_holdout_value_is_rejected(self) -> None:
-        """A reserved value with no coverage produces a silently empty OOD split."""
         with pytest.raises(ContractViolationError, match="do not occur"):
             split_examples(
                 corpus(),
@@ -235,8 +197,6 @@ class TestHoldoutSplits:
 
 class TestHoldoutResolution:
     def test_a_declared_reservation_becomes_an_explicit_plan(self) -> None:
-        """Declared in advance, never discovered by a seed. An OOD result you can
-        only describe after the split is not a hypothesis you tested."""
         plan = resolve_holdouts(corpus(), [scenario_with_holdout(reserve_formats=["json"])])
         assert plan.attribute == "format"
         assert plan.values == ["json"]
@@ -255,8 +215,6 @@ class TestHoldoutResolution:
         assert plan.values == []
 
     def test_two_declared_attributes_are_ambiguous(self) -> None:
-        """Holding out two attributes at once confounds the result: a drop in
-        test performance cannot be attributed to either shift."""
         scenario = scenario_with_holdout(reserve_formats=["json"], reserve_domains=["research"])
         with pytest.raises(ConfigError, match="declares holdouts on"):
             resolve_holdouts(corpus(), [scenario])
@@ -307,8 +265,6 @@ class TestManifest:
         )
 
     def test_the_manifest_holds_only_public_fields(self, tmp_path) -> None:
-        """DatasetManifest forbids extras, so one stray key makes the public
-        loader raise at train time."""
         _, sealed = self._sealed(tmp_path)
         raw = json.loads((sealed.path / "manifest.json").read_text(encoding="utf-8"))
         assert set(raw) == set(DatasetManifest.model_fields)
@@ -319,8 +275,6 @@ class TestManifest:
         assert sealed.manifest.quality_distribution == {"reviewed": 24}
 
     def test_file_hashes_cover_only_the_shipped_splits(self, tmp_path) -> None:
-        """Adding provenance.json would make our content_hash differ from the
-        one the public split_dataset.py computes for identical splits."""
         _, sealed = self._sealed(tmp_path)
         assert set(sealed.manifest.file_hashes) <= {
             "train.jsonl",
@@ -378,15 +332,12 @@ class TestReleaseImmutability:
         )
 
     def test_sealing_an_existing_version_is_refused(self, tmp_path) -> None:
-        """Every comparison and every trained checkpoint that named a version
-        meant one specific set of bytes."""
         workspace = self._workspace(tmp_path)
         self._seal(workspace)
         with pytest.raises(ReleaseImmutabilityError, match="already exists"):
             self._seal(workspace)
 
     def test_there_is_no_force_parameter(self) -> None:
-        """The refusal must not be a flag away from being defeated."""
         import inspect
 
         params = inspect.signature(ReleaseWriter.seal).parameters
@@ -399,15 +350,12 @@ class TestReleaseImmutability:
             assert not stat.S_IMODE(path.stat().st_mode) & 0o222
 
     def test_a_release_lock_is_written(self, tmp_path) -> None:
-        """Permissions are a speed bump. This is the actual guarantee."""
         sealed = self._seal(self._workspace(tmp_path))
         lock = json.loads((sealed.path / "RELEASE.lock").read_text(encoding="utf-8"))
         assert lock["content_hash"] == sealed.content_hash
         assert "provenance.json" in lock["all_file_hashes"]
 
     def test_a_failed_seal_leaves_nothing_behind(self, tmp_path, monkeypatch) -> None:
-        """A partial release directory would exist, look plausible, and be
-        missing examples."""
         workspace = self._workspace(tmp_path)
 
         import kleos_training_data.datasets.release as release_module
@@ -423,8 +371,6 @@ class TestReleaseImmutability:
         assert not list(workspace.releases.glob(".staging-*"))
 
     def test_only_canonical_filenames_are_written(self, tmp_path) -> None:
-        """train.py finds splits by exact filename; an alias validates and then
-        fails to train."""
         sealed = self._seal(self._workspace(tmp_path))
         jsonl = {p.name for p in sealed.path.glob("*.jsonl")}
         assert jsonl <= {"train.jsonl", "validation.jsonl", "test.jsonl"}
@@ -438,8 +384,6 @@ class TestReleaseImmutability:
 
 
 class TestVerification:
-    """Every test here tampers with a sealed release and asserts detection."""
-
     @pytest.fixture
     def sealed(self, tmp_path):
         workspace = Workspace.from_env(tmp_path)
@@ -504,8 +448,6 @@ class TestVerification:
         assert any("appear in both" in p or "more than once" in p for p in report.problems)
 
     def test_an_unreviewed_example_is_caught(self, sealed) -> None:
-        """The public loader filters to reviewed by default, so these would be
-        silently dropped — a release that validates and trains on less."""
         path = sealed.path / "train.jsonl"
         lines = path.read_text(encoding="utf-8").splitlines()
         first = json.loads(lines[0])
@@ -532,8 +474,6 @@ class TestVerification:
         assert not report.ok
 
     def test_privacy_content_is_caught(self, sealed) -> None:
-        """Every promoted example passed the privacy gates, so a detection here
-        means something was introduced during assembly."""
         path = sealed.path / "train.jsonl"
         lines = path.read_text(encoding="utf-8").splitlines()
         first = json.loads(lines[0])
@@ -561,12 +501,6 @@ class TestVerification:
 
 @pytest.mark.requires_kleos_models
 class TestDifferentialSplitting:
-    """The highest-value differential target.
-
-    A plausible-but-different splitter produces a valid-looking split that
-    disagrees with the public repo's about the same data, and nothing crashes.
-    """
-
     def _payloads(self, count: int = 60) -> list[dict]:
         domains = ["career", "research", "coursework", "projects"]
         formats = ["bullets", "prose", "json"]
@@ -630,7 +564,6 @@ class TestDifferentialSplitting:
 
     @pytest.mark.parametrize("strategy", ["entity_holdout", "domain_holdout", "format_holdout"])
     def test_the_chosen_holdout_values_match(self, strategy: str) -> None:
-        """Seed-chosen holdouts must agree too, or the OOD populations differ."""
         from kleos_models.config import SplitConfig as PublicConfig
         from kleos_models.data.schemas import TrainingExample as PublicExample
         from kleos_models.data.splitting import split_examples as public_split
@@ -647,7 +580,6 @@ class TestDifferentialSplitting:
         assert sorted(ours.holdout_values) == sorted(public.holdout_values)
 
     def test_the_public_loader_reads_our_release(self, tmp_path) -> None:
-        """The end the whole thing serves."""
         from kleos_models.config import DatasetConfig
         from kleos_models.data.loaders import load_dataset_bundle
 

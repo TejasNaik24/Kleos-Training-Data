@@ -1,15 +1,3 @@
-"""Staging records are atomic, integrity-checked, and lane-aware.
-
-The three properties that matter here:
-
-* A record edited outside the pipeline is **detectable**. Every signature and
-  gate result downstream is bound to exact bytes; a hand-edited candidate would
-  otherwise promote an example nobody approved.
-* A crash mid-write leaves no partial record.
-* A production capture can never become training data, and that is a property of
-  the lane type rather than a rule somebody remembered to apply.
-"""
-
 from __future__ import annotations
 
 import json
@@ -85,17 +73,10 @@ class TestRecordIntegrity:
         assert not tampered.hash_matches()
 
     def test_the_hash_excludes_itself(self) -> None:
-        """Otherwise sealing would change what it is hashing."""
         record = make_capture()
         assert record.compute_hash() == record.sealed().compute_hash()
 
     def test_a_hand_edited_record_is_rejected_on_read(self, tmp_path) -> None:
-        """The failure this exists for: someone fixes a typo after review.
-
-        The review signature is bound to the old bytes, so the edit silently
-        invalidates it. Detecting the edit is what stops an unapproved example
-        being promoted under an approval that no longer applies.
-        """
         path = write_record(make_capture(), tmp_path / "cap.json")
 
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -125,7 +106,6 @@ class TestAtomicWrites:
         assert [p.name for p in tmp_path.iterdir()] == ["cap.json"]
 
     def test_a_failed_write_leaves_no_partial_file(self, tmp_path, monkeypatch) -> None:
-        """A truncated JSON file fails to parse far from the cause."""
         import os
 
         def boom(*args, **kwargs):
@@ -165,7 +145,6 @@ class TestRecordDiscovery:
     def test_directory_metadata_and_sidecars_are_not_records(
         self, tmp_path, name: str, expected: bool
     ) -> None:
-        """Without this, iterating a batch tries to parse its own manifest."""
         assert is_record_file(tmp_path / name) is expected
 
     def test_iteration_skips_non_records(self, tmp_path) -> None:
@@ -177,8 +156,6 @@ class TestRecordDiscovery:
         assert count_records(tmp_path) == 1
 
     def test_iteration_is_sorted(self, tmp_path) -> None:
-        """Filesystem enumeration order is not stable across platforms, and a
-        release built from it would not be reproducible either."""
         for index in (3, 1, 2):
             write_record(make_capture(capture_id=f"cap-{index}"), tmp_path / f"cap-{index}.json")
         ids = [record.capture_id for record in iter_records(tmp_path, RawCapture)]
@@ -190,7 +167,6 @@ class TestRecordDiscovery:
 
 class TestCaptureLane:
     def test_production_observation_is_never_promotable(self) -> None:
-        """The single most consequential property in the repository."""
         assert not CaptureLane.PRODUCTION_OBSERVATION.promotable
 
     @pytest.mark.parametrize("lane", [CaptureLane.SYNTHETIC, CaptureLane.MOCK_BACKEND])
@@ -198,8 +174,6 @@ class TestCaptureLane:
         assert lane.promotable
 
     def test_offline_lanes_claim_a_synthetic_source(self) -> None:
-        """Sending a scenario through a real backend does not make it real data,
-        and running it offline does not make it real either."""
         assert CaptureLane.MOCK_BACKEND.contract_source == "synthetic"
         assert CaptureLane.SYNTHETIC.contract_source == "synthetic"
 
@@ -209,8 +183,6 @@ class TestCaptureLane:
 
 class TestNormalization:
     def test_reasoning_spans_are_stripped(self) -> None:
-        """The public formatter strips these at tokenization anyway, so an
-        example carrying one trains on less than it appears to."""
         capture = make_capture(answer_text="<think>weighing</think>1. Northwind.")
         candidate = normalize_capture(
             capture,
@@ -235,7 +207,6 @@ class TestNormalization:
         assert "normalized_line_endings" in candidate.transformations
 
     def test_every_change_is_recorded(self) -> None:
-        """Never silently change an answer and present it as the original."""
         capture = make_capture(answer_text="<think>x</think>1. A.  \r\n2. B.  ")
         candidate = normalize_capture(
             capture,
@@ -261,7 +232,6 @@ class TestNormalization:
         assert candidate.transformations == []
 
     def test_an_answer_that_was_only_reasoning_is_rejected(self) -> None:
-        """A truncated stream must not become an empty training target."""
         capture = make_capture(answer_text="<think>still thinking</think>")
         with pytest.raises(ContractViolationError, match="no assistant content"):
             normalize_capture(
@@ -286,7 +256,6 @@ class TestNormalization:
         assert candidate.candidate_id == example_id(candidate.payload)
 
     def test_the_candidate_is_marked_provisional(self) -> None:
-        """Sanitization may change the content, and therefore the id."""
         candidate = normalize_capture(
             make_capture(),
             system_prompt="Rank them.",
@@ -309,8 +278,6 @@ class TestNormalization:
 
 class TestRejectionReasons:
     def test_the_vocabulary_is_closed(self) -> None:
-        """Free-text reasons cannot be aggregated, and 'which failure
-        dominates?' is the question this has to answer."""
         with pytest.raises(ValueError, match="not a valid"):
             RejectionReason("it seemed bad")
 
@@ -321,13 +288,9 @@ class TestRejectionReasons:
         assert set(RejectionReason) >= RETRYABLE_REASONS
 
     def test_a_duplicate_is_not_retryable(self) -> None:
-        """Editing a duplicate does not make it promotable — it makes it a
-        different example, which needs its own review."""
         assert RejectionReason.CORPUS_DUPLICATE not in RETRYABLE_REASONS
 
     def test_a_secret_is_not_retryable(self) -> None:
-        """A secret means the capture path is compromised, not that the text
-        needs a tweak."""
         assert RejectionReason.SECRET_DETECTED not in RETRYABLE_REASONS
 
     def test_a_rejection_record_keeps_the_reason_not_the_content(self) -> None:
@@ -353,7 +316,6 @@ class TestAppendOnlyIndex:
         assert read_index(tmp_path / "absent.jsonl") == []
 
     def test_a_malformed_line_does_not_lose_the_rest(self, tmp_path) -> None:
-        """An audit trail's value is that it only ever grows."""
         path = tmp_path / "index.jsonl"
         append_index(path, {"id": "a"})
         with path.open("a", encoding="utf-8") as handle:

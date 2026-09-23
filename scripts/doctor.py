@@ -1,18 +1,3 @@
-#!/usr/bin/env python3
-"""Check the environment without printing a single secret value.
-
-    python scripts/doctor.py
-    python scripts/doctor.py --check-network      # only if you ask for it
-
-Reports whether each credential is *present*, never what it is. That is the whole
-point: the moment a diagnostic prints a token, it becomes the thing people paste
-into an issue.
-
-Touches the network only with ``--check-network``. A diagnostic that silently
-reaches a backend is a diagnostic that can leak which deployment you are pointed
-at, and it makes the command unusable on a plane.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -39,10 +24,8 @@ from kleos_training_data.paths import Workspace
 from kleos_training_data.privacy.rules import RULESET_VERSION
 from kleos_training_data.review.rubric import RUBRIC_VERSION
 
-#: Credentials to report on. Only ever presence, never value.
 SECRET_VARS: tuple[str, ...] = ("KLEOS_API_TOKEN", "ANTHROPIC_API_KEY")
 
-#: Non-secret settings, safe to echo.
 SETTING_VARS: tuple[str, ...] = (
     "KLEOS_BACKEND_URL",
     "KLEOS_TRAINING_DATA_ENV",
@@ -59,9 +42,7 @@ def _row(label: str, ok: bool | None, detail: str = "") -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
-    )
+    parser = argparse.ArgumentParser()
     parser.add_argument(
         "--check-network",
         action="store_true",
@@ -75,7 +56,6 @@ def main(argv: list[str] | None = None) -> int:
     print_header("KLEOS TRAINING DATA DOCTOR")
     problems: list[str] = []
 
-    # --- runtime -----------------------------------------------------------
     print("\n  Runtime")
     version_ok = sys.version_info >= MIN_PYTHON
     print(_row("python", version_ok, f"{sys.version_info.major}.{sys.version_info.minor}"))
@@ -106,7 +86,6 @@ def main(argv: list[str] | None = None) -> int:
                 )
             )
 
-    # --- versions ----------------------------------------------------------
     print("\n  Versions")
     print(_row("pipeline", True, PIPELINE_VERSION))
     print(_row("dataset schema", True, DATASET_SCHEMA_VERSION))
@@ -115,7 +94,6 @@ def main(argv: list[str] | None = None) -> int:
     print(_row("pinned contract", True, CONTRACT_SOURCE_COMMIT[:12]))
     print(_row("registered tasks", True, str(len(SUPPORTED_TASKS))))
 
-    # --- secrets -----------------------------------------------------------
     print("\n  Secrets (values are never printed)")
     for name in SECRET_VARS:
         secret = SafeSecret(os.environ.get(name, ""), label=name)
@@ -132,7 +110,6 @@ def main(argv: list[str] | None = None) -> int:
         value = os.environ.get(name, "")
         print(_row(name, None if not value else True, value or "not set"))
 
-    # --- production guard --------------------------------------------------
     print("\n  Capture safety")
     backend = os.environ.get("KLEOS_BACKEND_URL", "mock://local")
     local = is_local(backend)
@@ -159,7 +136,6 @@ def main(argv: list[str] | None = None) -> int:
         )
     )
 
-    # --- workspace ---------------------------------------------------------
     print("\n  Workspace")
     workspace = Workspace.from_env(args.workspace)
     missing = workspace.missing_zones()
@@ -185,7 +161,6 @@ def main(argv: list[str] | None = None) -> int:
     releases = sorted(p.name for p in workspace.releases.glob("*") if p.is_dir())
     print(_row("releases", True, ", ".join(releases) if releases else "none yet"))
 
-    # --- git ---------------------------------------------------------------
     print("\n  Git")
     if shutil.which("git") is None:
         print(_row("git", None, "not installed — ignore rules cannot be verified"))
@@ -215,7 +190,6 @@ def main(argv: list[str] | None = None) -> int:
                 )
             )
 
-    # --- compatibility -----------------------------------------------------
     print("\n  Compatibility")
     available = kleos_models_available()
     print(
@@ -233,7 +207,6 @@ def main(argv: list[str] | None = None) -> int:
         )
     )
 
-    # --- network -----------------------------------------------------------
     print("\n  Network")
     if not args.check_network:
         print(_row("backend probe", None, "skipped — pass --check-network to run it"))

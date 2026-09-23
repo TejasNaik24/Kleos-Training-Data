@@ -1,5 +1,3 @@
-"""Run all four detection layers and produce a sanitized candidate."""
-
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -18,7 +16,6 @@ from kleos_training_data.privacy.redaction import (
 from kleos_training_data.privacy.rules import RULESET_VERSION
 from kleos_training_data.scenarios.surrogates import SurrogatePool
 
-#: Sanitization outcomes.
 STATUS_CLEAN = "clean"
 STATUS_SANITIZED = "sanitized"
 STATUS_NEEDS_REVIEW = "needs_review"
@@ -27,14 +24,6 @@ STATUS_BLOCKED = "blocked"
 
 @dataclass
 class SanitizationResult:
-    """Everything sanitization concluded about one candidate.
-
-    Never contains a matched value. ``input_hash`` is a pointer back into
-    ``staging/`` and is deliberately kept out of the promoted example's metadata
-    — gate G14's allowlist rejects it, because a release should not carry a
-    reference into the staging zone.
-    """
-
     status: str
     payload: dict[str, Any]
     detections: list[Detection] = field(default_factory=list)
@@ -48,7 +37,6 @@ class SanitizationResult:
 
     @property
     def ok(self) -> bool:
-        """Whether the candidate may proceed to review."""
         return self.status in {STATUS_CLEAN, STATUS_SANITIZED}
 
     @property
@@ -57,11 +45,9 @@ class SanitizationResult:
 
     @property
     def residual_rule_ids(self) -> list[str]:
-        """Rules that fired and could not be resolved automatically."""
         return sorted({d.rule_id for d in self.detections if d.severity in {"block", "review"}})
 
     def to_dict(self) -> dict[str, Any]:
-        """The ``<id>.privacy.json`` sidecar."""
         summary = ScanSummary(self.detections)
         return {
             "status": self.status,
@@ -81,11 +67,6 @@ class SanitizationResult:
 
 
 def known_surrogate_names(pools: dict[str, SurrogatePool]) -> frozenset[str]:
-    """Every name the committed pools can produce, plus their component words.
-
-    Passed to the structural layer so it does not flag the fictional names this
-    repository generated as if they were somebody's personal data.
-    """
     names: set[str] = set()
     for pool in pools.values():
         for value in pool.values:
@@ -99,14 +80,6 @@ def _merged_detections(
     vault: EntityVault | None,
     known_names: frozenset[str] | None = None,
 ) -> list[Detection]:
-    """Run the regex layers and the vault layer, then resolve overlaps *together*.
-
-    Resolving each layer separately is not enough. A vault entry for an
-    organization frequently sits inside an email address containing it, so both
-    fire on overlapping spans; applying both replacements corrupts the text
-    (``dana@realcompany.com`` became ``dana@example.invalid`` with the tail of
-    the following word eaten). Overlap resolution has to see every layer at once.
-    """
     from kleos_training_data.privacy.detect import (
         _resolve_overlaps,
         iter_text_fields,
@@ -130,7 +103,6 @@ def _apply(
     scenario_family: str,
     pools: dict[str, SurrogatePool],
 ) -> tuple[dict[str, Any], int]:
-    """Redact then rehydrate every text field. Returns the payload and a count."""
     by_field: dict[str, list[Detection]] = {}
     for detection in detections:
         by_field.setdefault(detection.field_path, []).append(detection)
@@ -170,13 +142,6 @@ def sanitize(
     vault: EntityVault | None = None,
     pools: dict[str, SurrogatePool] | None = None,
 ) -> SanitizationResult:
-    """Run every layer over one candidate payload.
-
-    A secret short-circuits everything: the candidate is ``blocked`` and nothing
-    is redacted. Redacting a credential would produce a clean-looking candidate
-    and hide that the capture path is compromised — which is a bigger problem
-    than the one example.
-    """
     from kleos_training_data.scenarios.surrogates import load_pools
 
     available = pools if pools is not None else load_pools()
@@ -204,9 +169,6 @@ def sanitize(
         payload, detections, mapping, scenario_family=scenario_family, pools=available
     )
 
-    # Re-scan the output. A rule that fires on the sanitized text means redaction
-    # produced something still sensitive — the case where a partial replacement
-    # leaves an identifying remainder behind.
     residual = scan_payload(sanitized, known_names=known)
     residual_blocking = [d for d in residual if d.severity == "block"]
 
@@ -244,13 +206,6 @@ def sanitize(
 
 
 def verify_sanitized(payload: dict[str, Any], *, vault: EntityVault | None = None) -> list[str]:
-    """Final byte-level check, used by promotion gate G06.
-
-    Returns the problems found, empty when clean. Three things must hold:
-    no secret survives, no placeholder residue survives, and no vault literal
-    survives. The last is the one nothing downstream could catch — after
-    sanitization, nothing else knows the string was ever sensitive.
-    """
     problems: list[str] = []
 
     for detection in scan_payload(payload):
@@ -273,5 +228,4 @@ def verify_sanitized(payload: dict[str, Any], *, vault: EntityVault | None = Non
 
 
 def scan_release_text(text: str) -> list[Detection]:
-    """Scan arbitrary text, for the byte-level scan of a written release."""
     return scan_text(text, field_path="release")

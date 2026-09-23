@@ -1,14 +1,3 @@
-#!/usr/bin/env python3
-"""Turn raw captures into contract-shaped candidates.
-
-    python scripts/normalize_captures.py --batch slice-001
-
-Normalization is deterministic and non-semantic: line endings, reasoning spans,
-trailing whitespace, transport envelopes. It never changes meaning. Every change
-it does make is recorded on the candidate, so a reviewer sees what was done to
-the text before they read it.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -38,9 +27,7 @@ from kleos_training_data.staging.store import iter_records, write_record
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
-    )
+    parser = argparse.ArgumentParser()
     add_batch_argument(parser)
     parser.add_argument("--scenarios", type=Path, help="Catalog root (default: scenarios/).")
     parser.add_argument("--workspace", type=Path, help="Workspace root.")
@@ -56,15 +43,6 @@ def main(argv: list[str] | None = None) -> int:
     source = workspace.raw_batch(args.batch)
     destination = workspace.normalized_batch(args.batch)
 
-    # Rebuild the request side from the catalog. The capture holds the answer;
-    # the prompt that produced it is reproducible from the scenario, and
-    # re-deriving it is what lets normalization verify the two still agree.
-    # Keyed by (family, point), holding *every* request at that point rather
-    # than one per perturbation kind. The key used to include the kind and the
-    # base id but not the ordinal, so the two members of a `count: 2` paraphrase
-    # group shared a key and the second replaced the first — leaving 204
-    # captures in the batch whose prompt was no longer in the lookup, reported
-    # as "no prompt in the catalog matches this capture".
     requests_by_point: dict[str, list[object]] = {}
     for scenario in load_catalog(args.scenarios or DEFAULT_CATALOG_DIR):
         pool = SurrogatePool.load(scenario.entities.pool)
@@ -87,9 +65,6 @@ def main(argv: list[str] | None = None) -> int:
             failures.append((capture.capture_id, "no scenario point matches this capture"))
             continue
 
-        # A capture identifies its point; the perturbation dimension is resolved
-        # by matching the request hash, so a reordered catalog cannot silently
-        # pair a capture with the wrong prompt.
         from kleos_training_data.hashing import canonical_hash
 
         request = None
@@ -121,11 +96,6 @@ def main(argv: list[str] | None = None) -> int:
 
         target = destination / f"{candidate.candidate_id}.json"
         if candidate.candidate_id in seen_ids:
-            # Two captures normalized to identical content. Left alone this is a
-            # silent loss: the second write overwrites the first and the batch
-            # quietly shrinks. Report it instead — it means two scenario points
-            # render the same text, which is a catalog problem, not a transport
-            # one.
             failures.append(
                 (
                     capture.capture_id,

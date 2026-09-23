@@ -1,10 +1,3 @@
-"""Review: the rubric invariant, the LLM contract, and signed decisions.
-
-The centrepiece is ``TestGatesDominate``. "A failing hard gate overrides every
-score" is easy to state, easy to document, and easy to erode — so it is asserted
-on every construction path, including the ones a future refactor would reach for.
-"""
-
 from __future__ import annotations
 
 import itertools
@@ -60,8 +53,6 @@ def payload(assistant: str = "Start with Northwind — nearest deadline, confirm
 
 
 class TestGatesDominate:
-    """The invariant, asserted on every path that could reach it."""
-
     @pytest.mark.parametrize(
         "failing",
         [
@@ -74,8 +65,6 @@ class TestGatesDominate:
     def test_no_failing_subset_can_be_approved(
         self, failing: tuple[str, ...], decision: str
     ) -> None:
-        """All 15 non-empty subsets of failing gates, against both non-rejecting
-        decisions. Perfect scores throughout."""
         with pytest.raises(ValidationError, match="FAILED"):
             ReviewVerdict(
                 scores=scores(4),
@@ -95,7 +84,6 @@ class TestGatesDominate:
         assert "policy_not_facts" in verdict.explain()
 
     def test_json_deserialization_cannot_bypass_the_invariant(self) -> None:
-        """A crafted record on disk must not become an approval."""
         crafted = {
             "scores": scores(4).model_dump(),
             "gates": gates(no_private_data="FAIL").model_dump(),
@@ -105,7 +93,6 @@ class TestGatesDominate:
             ReviewVerdict.model_validate(crafted)
 
     def test_model_copy_cannot_bypass_the_invariant(self) -> None:
-        """`model_copy(update=...)` is the obvious way to sneak past a validator."""
         verdict = ReviewVerdict(
             scores=scores(4), gates=gates(no_private_data="FAIL"), decision="rejected"
         )
@@ -123,8 +110,6 @@ class TestScoreThresholds:
         assert ReviewVerdict.decide(scores(4), gates()).decision == "approved"
 
     def test_a_single_dimension_below_the_floor_blocks_approval(self) -> None:
-        """A 0 in one dimension is not redeemed by 4s elsewhere. A beautifully
-        written example that reaches the wrong decision is not a 3.2."""
         verdict = ReviewVerdict.decide(scores(4, decision_correctness=1), gates())
         assert verdict.decision == "needs_revision"
         assert "decision_correctness" in verdict.explain()
@@ -179,7 +164,6 @@ class TestLLMSchema:
         ],
     )
     def test_both_layers_reject_the_same_payloads(self, name: str, payload_override: dict) -> None:
-        """The two validators must not drift into disagreeing about validity."""
         crafted = self._valid(**payload_override)
 
         schema_errors = validate_against_schema(crafted)
@@ -197,11 +181,6 @@ class TestLLMSchema:
         assert LLMReview.model_validate(self._valid())
 
     def test_a_failing_gate_without_evidence_is_rejected(self) -> None:
-        """A cross-field rule JSON Schema expresses badly, so pydantic owns it.
-
-        A failure nobody can act on is worse than no review, and it is also the
-        shape a model produces when it is guessing.
-        """
         with pytest.raises(ValidationError, match="no evidence"):
             LLMReview.model_validate(
                 self._valid(gates={**dict.fromkeys(HARD_GATES, "PASS"), "no_private_data": "FAIL"})
@@ -221,8 +200,6 @@ class TestLLMSchema:
             LLMReview.model_validate(self._valid(gate_evidence={"vibes": "off"}))
 
     def test_the_schema_covers_every_dimension_and_gate(self) -> None:
-        """A rubric change that does not reach the schema silently stops being
-        asked about."""
         assert set(REVIEW_RESPONSE_SCHEMA["properties"]["scores"]["properties"]) == set(DIMENSIONS)
         assert set(REVIEW_RESPONSE_SCHEMA["properties"]["gates"]["properties"]) == set(HARD_GATES)
 
@@ -284,8 +261,6 @@ class TestHumanDecision:
 
     @pytest.mark.parametrize("gate", sorted(UNOVERRIDABLE_GATES))
     def test_a_human_cannot_approve_over_privacy(self, gate: str) -> None:
-        """Not a judgement about this example. The only way forward is to fix
-        the content, which changes its id and demands a fresh review."""
         with pytest.raises(ValidationError, match="cannot approve over failing gate"):
             self._decision(gates=gates(**{gate: "FAIL"}))
 
@@ -302,12 +277,10 @@ class TestHumanDecision:
         assert decision.decision == "reject"
 
     def test_a_rejection_needs_a_reason_code(self) -> None:
-        """ "Which failure dominates?" must stay answerable."""
         with pytest.raises(ValidationError, match="reason code"):
             self._decision(decision="reject", gates=gates(no_private_data="FAIL"))
 
     def test_a_score_override_needs_a_justification(self) -> None:
-        """An unexplained override is indistinguishable from a mistake."""
         with pytest.raises(ValidationError, match="override_justification"):
             self._decision(score_overrides={"actionability": 2})
 
@@ -327,7 +300,6 @@ class TestHumanDecision:
             self._decision(score_overrides={"actionability": 9}, override_justification="x")
 
     def test_the_reviewer_is_a_role_not_a_name(self) -> None:
-        """This record is an audit artifact and outlives the review."""
         assert self._decision().reviewer_role == "operator"
 
 
@@ -365,14 +337,11 @@ class TestDecisionSignatures:
         assert not tampered.signature_valid()
 
     def test_a_decision_applies_only_to_the_hash_it_was_made_about(self) -> None:
-        """Gate G08 asks exactly this. A decision about different text is not a
-        weaker approval — it is no approval at all."""
         signed = self._signed()
         assert signed.applies_to("a" * 64)
         assert not signed.applies_to("b" * 64)
 
     def test_an_edited_candidate_loses_its_approval(self) -> None:
-        """The whole point: an approval must not carry over to text nobody read."""
         signed = self._signed(content_hash="original" + "0" * 56)
         assert not signed.applies_to("edited" + "0" * 58)
 
@@ -454,8 +423,6 @@ class TestPackets:
         return PacketItem(**base)
 
     def test_the_packet_leads_with_the_claims(self) -> None:
-        """The reviewer should be asked "does this teach that?", not "does this
-        look fine?"."""
         rendered = ReviewPacket("pk-1", "b1", [self._item()]).render_markdown()
         assert "Should teach" in rendered
         assert "Must not teach" in rendered

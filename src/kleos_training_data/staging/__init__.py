@@ -1,11 +1,3 @@
-"""The staging zone: unverified captures through approved candidates.
-
-Everything here is deny-by-default in ``.gitignore`` and guarded by the private-
-data scanner's ``FORBIDDEN_PATHS``. A reviewer should be able to tell from the
-filesystem alone whether an artifact is raw and potentially sensitive, reviewed
-but not yet promoted, or trusted final training data.
-"""
-
 from __future__ import annotations
 
 from kleos_training_data.staging.normalize import candidate_from_payload, normalize_capture

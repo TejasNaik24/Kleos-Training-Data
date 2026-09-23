@@ -1,10 +1,3 @@
-"""Review: rubric, packets, machine review, and the human decision.
-
-Deterministic gates are authoritative. A machine reviewer produces a structured
-opinion. A human owns the final call — and cannot approve over a failing privacy
-or private-fact gate, because that is not a judgement about one example.
-"""
-
 from __future__ import annotations
 
 from kleos_training_data.review.llm_schema import (

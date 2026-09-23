@@ -1,17 +1,3 @@
-"""The .gitignore actually blocks what it claims to block.
-
-This is the most important test in the repository, and it is deliberately the
-least clever one. It does not re-implement gitignore matching — it initializes a
-throwaway repository, copies the real ``.gitignore`` into it, materializes every
-path we care about, and asks real git.
-
-A hand-rolled matcher that disagrees with git is worse than no test at all: it
-would pass while the real thing lets a raw capture into a commit.
-
-The decisive assertion is not ``git check-ignore`` but ``git add -A`` — what git
-would *actually stage* if someone ran the command everyone runs.
-"""
-
 from __future__ import annotations
 
 import subprocess
@@ -22,13 +8,7 @@ from tests.conftest import HAS_GIT, REPO_ROOT, git, make_git_sandbox, touch
 pytestmark = pytest.mark.skipif(not HAS_GIT, reason="git is not installed")
 
 
-#: Paths that must never reach a commit.
-#:
-#: The runtime zones dominate this list because they are the whole reason the
-#: repository is private. Everything under them is either one person's private
-#: data, a key that re-identifies it, or the product itself.
 MUST_BE_IGNORED = [
-    # staging/ — unverified captures and partially sanitized candidates
     "staging/raw/slice-001/cap_9d0e6a2c.json",
     "staging/raw/slice-001/batch.json",
     "staging/normalized/slice-001/kx-npr-3f9a1c8e2b7d0456.json",
@@ -40,29 +20,23 @@ MUST_BE_IGNORED = [
     "staging/rejected/kx-npr-deadbeef12345678.json",
     "staging/promoted/index.jsonl",
     "staging/promoted/gate_reports/pr-001.json",
-    # vault/ — the maps from a surrogate name back to a real person
     "vault/entity_vault.json",
     "vault/surrogate_maps/notif.deadline_vs_evidence.json",
-    # releases/ — the product, shipped by path rather than by git
     "releases/kleos-policy-v0.1.0/train.jsonl",
     "releases/kleos-policy-v0.1.0/validation.jsonl",
     "releases/kleos-policy-v0.1.0/test.jsonl",
     "releases/kleos-policy-v0.1.0/manifest.json",
     "releases/kleos-policy-v0.1.0/provenance.json",
     "releases/kleos-policy-v0.1.0/RELEASE.lock",
-    # reports/ — may quote candidate text
     "reports/coverage/kleos-policy-v0.1.0.md",
     "reports/leakage/leakage_report.json",
     "reports/dedup/near_duplicates.json",
-    # A dataset copied or downloaded to the repository root by mistake.
     "train.jsonl",
     "validation.jsonl",
     "test.jsonl",
-    # data/ is deny-by-default: an export dropped in must not sail through.
     "data/my_export.jsonl",
     "data/memories.json",
     "data/raw_conversations/2026-08-21.json",
-    # Secrets
     ".env",
     ".env.local",
     ".env.production",
@@ -71,24 +45,17 @@ MUST_BE_IGNORED = [
     "bundle.p12",
     "credentials.json",
     "service-account-kleos.json",
-    # Tooling noise
     ".DS_Store",
     "__pycache__/module.cpython-311.pyc",
     ".pytest_cache/CACHEDIR.TAG",
     ".mypy_cache/index.json",
 ]
 
-#: Paths that must remain trackable. Half of this test is proving the ignore
-#: rules are not so broad that the repository cannot hold its own source.
 MUST_BE_TRACKED = [
-    # The .gitkeep files are what make the zones survive a clone. A rule of
-    # `staging/` instead of `staging/*` silently drops these, and the directory
-    # vanishes for the next person who clones.
     "staging/.gitkeep",
     "vault/.gitkeep",
     "releases/.gitkeep",
     "reports/.gitkeep",
-    # Project files
     ".gitignore",
     ".gitattributes",
     ".env.example",
@@ -97,13 +64,11 @@ MUST_BE_TRACKED = [
     "README.md",
     "PRIVACY.md",
     "SECURITY.md",
-    # Source, scripts, tests
     "src/kleos_training_data/__init__.py",
     "src/kleos_training_data/privacy/rules.py",
     "scripts/check_no_private_data.py",
     "scripts/build_release.py",
     "tests/conftest.py",
-    # Committed, synthetic content
     "scenarios/notification_prioritization/deadline_vs_evidence.yaml",
     "scenarios/_shared/system_prompts/reasoning_layer.md",
     "configs/pipeline.yaml",
@@ -119,14 +84,6 @@ MUST_BE_TRACKED = [
 
 @pytest.fixture(scope="module")
 def sandbox(tmp_path_factory):
-    """A throwaway repository carrying the real .gitignore and every probe path.
-
-    Order matters: the probes are written first and the real ``.gitignore`` is
-    copied in last. ``.gitignore`` is itself in ``MUST_BE_TRACKED`` — it has to
-    be, or a rule that ignored it would go unnoticed — so touching the probes
-    afterwards would overwrite the file under test with a one-byte placeholder
-    and every ignore assertion would silently pass against an empty ruleset.
-    """
     directory = tmp_path_factory.mktemp("gitignore_sandbox")
     for relative in MUST_BE_IGNORED + MUST_BE_TRACKED:
         touch(directory, relative)
@@ -141,7 +98,6 @@ def sandbox(tmp_path_factory):
 
 
 def is_ignored(sandbox, relative: str) -> bool:
-    """Ask git, not a regex."""
     result = subprocess.run(
         ["git", "check-ignore", "-q", relative], cwd=sandbox, capture_output=True
     )
@@ -168,12 +124,6 @@ def test_repository_content_stays_trackable(sandbox, relative: str) -> None:
 
 
 def test_staging_everything_admits_only_the_allowlist(sandbox) -> None:
-    """The decisive check: what does `git add -A` actually stage?
-
-    ``check-ignore`` answers a question about one path at a time. This answers
-    the question that matters — what lands in the index when someone runs the
-    command they always run.
-    """
     git("add", "-A", cwd=sandbox)
     staged = set(git("diff", "--cached", "--name-only", cwd=sandbox).stdout.split())
 
@@ -190,12 +140,6 @@ def test_staging_everything_admits_only_the_allowlist(sandbox) -> None:
 
 
 def test_every_runtime_zone_is_covered() -> None:
-    """Each of the four zones has at least one ignore probe and one keep probe.
-
-    Guards against a new zone being added to paths.py without anyone extending
-    this test — the failure mode where the test file still passes but no longer
-    covers what it claims to.
-    """
     from kleos_training_data.paths import Workspace
 
     space = Workspace.from_env(REPO_ROOT)
@@ -212,11 +156,6 @@ def test_every_runtime_zone_is_covered() -> None:
 
 
 def test_gitignore_has_no_trailing_comments_on_patterns() -> None:
-    """Git does not support trailing comments, and the failure is silent.
-
-    ``!data/fixtures/  # keep`` is a literal pattern that matches nothing, which
-    un-ignores nothing at all — and looks completely correct while doing so.
-    """
     offenders = []
     for number, line in enumerate((REPO_ROOT / ".gitignore").read_text().splitlines(), start=1):
         stripped = line.strip()

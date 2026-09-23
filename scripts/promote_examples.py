@@ -1,19 +1,3 @@
-#!/usr/bin/env python3
-"""Promote reviewed candidates into the pool a release draws from.
-
-    python scripts/promote_examples.py --batch slice-001
-
-Fourteen gates, all of which run — one pass tells you everything wrong with a
-candidate rather than one thing at a time.
-
-``--force`` bypasses only the gates the gate table marks bypassable. It cannot
-reach a privacy, schema, review or leakage gate: ``PromotionPolicy`` refuses to
-be constructed with one, and the runner refuses to believe a run in which a
-mandatory gate did not execute.
-
-Exits 3 when a gate fails, 4 when the failure is a privacy gate.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -54,7 +38,6 @@ LEDGER_PATH = Path(__file__).resolve().parent.parent / "data" / "id_ledger.json"
 
 
 def _load_corpus(workspace: Workspace) -> CorpusIndex:
-    """Everything already promoted."""
     entries = []
     for record in iter_records(workspace.staging / "promoted", PromotedExample):
         entries.append(
@@ -68,7 +51,6 @@ def _load_corpus(workspace: Workspace) -> CorpusIndex:
 
 
 def _load_eval_corpus(path: Path | None) -> CorpusIndex:
-    """Held-out evaluation material to check leakage against."""
     if path is None or not path.is_file():
         return CorpusIndex(entries=[])
     entries = []
@@ -87,9 +69,7 @@ def _load_eval_corpus(path: Path | None) -> CorpusIndex:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
-    )
+    parser = argparse.ArgumentParser()
     add_batch_argument(parser)
     parser.add_argument("--candidate", action="append", default=None, help="Limit to these ids.")
     parser.add_argument(
@@ -117,8 +97,6 @@ def main(argv: list[str] | None = None) -> int:
     workspace = Workspace.from_env(args.workspace)
     workspace.assert_initialized()
 
-    # --force maps to a constant, never to user input. There is deliberately no
-    # flag naming a gate to bypass.
     policy = (
         PromotionPolicy.forced(
             min_mean_score=args.min_mean_score,
@@ -240,8 +218,6 @@ def main(argv: list[str] | None = None) -> int:
                 "batch_id": candidate.batch_id,
             },
         )
-        # Index as we go, so two identical candidates in one batch cannot both
-        # be promoted by racing an index that is only refreshed between runs.
         corpus.add(
             CorpusEntry(
                 example_id=example["id"],
@@ -286,7 +262,6 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _reasons_for(report) -> list[RejectionReason]:
-    """Map failing gate ids to closed-vocabulary reason codes."""
     mapping = {
         "G01_STAGING_INTEGRITY": RejectionReason.STAGING_INTEGRITY,
         "G02_SCHEMA_VALID": RejectionReason.SCHEMA_INVALID,

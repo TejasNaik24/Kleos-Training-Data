@@ -1,19 +1,3 @@
-#!/usr/bin/env python3
-"""Verify the contract mirror against the pinned public repository.
-
-    python scripts/check_contract_compat.py --strict
-    python scripts/check_contract_compat.py --release releases/kleos-policy-v0.1.0 --strict
-
-Answers one question with one word: COMPATIBLE or INCOMPATIBLE. It never
-silently continues.
-
-Without ``--strict``, an absent kleos-models reports SKIPPED and exits 0 — the
-normal local state, since the offline pipeline is meant to work without the
-public repo checked out. CI passes ``--strict``, where absence is a failure: a
-compatibility check that passes because it could not run produces a green build
-that means nothing.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -34,9 +18,7 @@ from kleos_training_data.errors import EXIT_GATE_FAILED, EXIT_OK
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
-    )
+    parser = argparse.ArgumentParser()
     parser.add_argument("--release", type=Path, help="Also round-trip this release.")
     parser.add_argument(
         "--strict",

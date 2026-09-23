@@ -1,56 +1,21 @@
-"""Detection rules: patterns, severities and allowlists.
-
-Four layers, in the order they run. The order is the design:
-
-1. **secrets** — severity ``block``. Never auto-redacted, always a hard reject.
-   A credential in a candidate means the capture path itself is compromised;
-   quietly swapping the string for a placeholder would hide that and let the
-   pipeline carry on as though nothing happened.
-2. **pii** — severity ``redact``. Mechanically replaceable: an email is an email
-   wherever it appears.
-3. **vault** — severity ``redact``. Operator-supplied literals that regex cannot
-   find, such as a real employer whose name reads like an ordinary noun.
-4. **structural** — severity ``review``. Heuristics with real false-positive
-   rates (capitalized bigrams, organization suffixes). They flag for a human
-   rather than deciding.
-
-The secret patterns are duplicated from ``scripts/check_no_private_data.py``,
-which imports nothing so it can run before any install.
-``tests/test_privacy_rules.py`` asserts this list is a superset of that one — a
-library scanner looser than the pre-commit scanner is how a secret reaches a
-release.
-"""
-
 from __future__ import annotations
 
 import re
 from typing import Final, NamedTuple
 
-#: Bumped whenever a rule changes in a way that would produce different output
-#: from identical input. Recorded on every sanitized candidate, so a release can
-#: name the ruleset that produced it.
 RULESET_VERSION: Final[str] = "privacy-rules-v1"
 
-#: Severity ordering, most severe first.
 SEVERITIES: Final[tuple[str, ...]] = ("block", "redact", "review", "warn")
 
 
 class Rule(NamedTuple):
-    """One detection rule."""
-
     rule_id: str
     kind: str
     layer: str
     severity: str
     pattern: re.Pattern[str]
-    #: Placeholder slot this rule redacts into. ``None`` for block/warn rules,
-    #: which are never replaced.
     slot: str | None = None
 
-
-# ---------------------------------------------------------------------------
-# Layer 1 — secrets. Severity `block`.
-# ---------------------------------------------------------------------------
 
 SECRET_RULES: Final[tuple[Rule, ...]] = (
     Rule(
@@ -159,10 +124,6 @@ SECRET_RULES: Final[tuple[Rule, ...]] = (
 )
 
 
-# ---------------------------------------------------------------------------
-# Layer 2 — PII. Severity `redact`.
-# ---------------------------------------------------------------------------
-
 PII_RULES: Final[tuple[Rule, ...]] = (
     Rule(
         "pii.email.v1",
@@ -183,8 +144,6 @@ PII_RULES: Final[tuple[Rule, ...]] = (
     Rule(
         "pii.ssn.v1", "ssn_like", "pii", "redact", re.compile(r"\b\d{3}-\d{2}-\d{4}\b"), slot="ID"
     ),
-    # A home directory path names its owner, and these appear constantly in
-    # anything pasted from a terminal.
     Rule(
         "pii.home_path.v1",
         "home_path",
@@ -250,9 +209,6 @@ PII_RULES: Final[tuple[Rule, ...]] = (
         ),
         slot="ID",
     ),
-    # An absolute timestamp pins an event to a real moment in someone's life.
-    # Relative phrasing ("due Friday") carries the same decision information
-    # without the anchor, which is why scenarios render deadlines that way.
     Rule(
         "pii.absolute_datetime.v1",
         "absolute_datetime",
@@ -264,12 +220,6 @@ PII_RULES: Final[tuple[Rule, ...]] = (
 )
 
 
-# ---------------------------------------------------------------------------
-# Layer 4 — structural heuristics. Severity `review`.
-# ---------------------------------------------------------------------------
-
-#: Words whose capitalization is grammatical rather than a name. Shared with the
-#: private-fact heuristics so the two layers agree about what a name looks like.
 SENTENCE_STARTERS: Final[tuple[str, ...]] = (
     "The",
     "This",
@@ -325,7 +275,6 @@ SENTENCE_STARTERS: Final[tuple[str, ...]] = (
     "Unless",
 )
 
-#: Organization suffixes strong enough to name an entity.
 ORG_SUFFIXES: Final[tuple[str, ...]] = (
     "Inc",
     "LLC",
@@ -356,26 +305,11 @@ STRUCTURAL_RULES: Final[tuple[Rule, ...]] = (
         re.compile(r"\b(?:[A-Z][A-Za-z0-9&.-]+\s+){1,3}(?:" + "|".join(ORG_SUFFIXES) + r")\b"),
         slot="ORG",
     ),
-    # A capitalized bigram is a weak signal on its own — "Blue Harbor" is a
-    # fictional project, "Dana Whitfield" is a person, and nothing in the string
-    # distinguishes them. Hence `review`, not `redact`.
-    #
-    # The negative lookahead stops the bigram spanning a sentence boundary:
-    # "…first. Then Silverbrook…" is not a person called "Then Silverbrook",
-    # and flagging it teaches a reviewer to skim.
     Rule(
         "structural.person_name.v1",
         "person_name",
         "structural",
         "review",
-        # `[ \t]+`, not `\s+`: a person's name is written on one line. Allowing
-        # the separator to match a newline joined the last word of one line to
-        # the first word of the next, so "Active workspace: Research\nBlue
-        # Harbor is due..." matched "Research Blue" and redaction rewrote it to
-        # "Active workspace: Sam Ridley Harbor" — corrupting a prompt whose
-        # assistant turn still named Blue Harbor, which the no_unsupported_claims
-        # gate then correctly rejected. Narrowing the separator removes the false
-        # positive without weakening the rule on any name a person would write.
         re.compile(
             r"\b(?!(?:" + "|".join(SENTENCE_STARTERS) + r")\b)"
             r"[A-Z][a-z]{2,}[ \t]+[A-Z][a-z]{2,}\b"
@@ -388,12 +322,6 @@ STRUCTURAL_RULES: Final[tuple[Rule, ...]] = (
 ALL_RULES: Final[tuple[Rule, ...]] = SECRET_RULES + PII_RULES + STRUCTURAL_RULES
 
 
-# ---------------------------------------------------------------------------
-# Allowlists
-# ---------------------------------------------------------------------------
-
-#: Addresses that are documentation placeholders. ``.invalid`` is reserved by
-#: RFC 2606 and is what every committed fixture uses.
 EMAIL_ALLOWLIST: Final[re.Pattern[str]] = re.compile(
     r"(?:noreply@|example\.com|example\.org|example\.invalid|\.invalid|"
     r"your[-_]?email|user@host|@example|name@domain)",
@@ -404,8 +332,6 @@ UUID_ALLOWLIST: Final[re.Pattern[str]] = re.compile(
     r"(?:00000000-0000-0000-0000-000000000000|deadbeef)", re.IGNORECASE
 )
 
-#: Capitalized bigrams that are ordinary language rather than names. Kept short
-#: on purpose: every entry is a case the structural layer stops looking at.
 PHRASE_ALLOWLIST: Final[frozenset[str]] = frozenset(
     {
         "Item A",
@@ -419,21 +345,18 @@ PHRASE_ALLOWLIST: Final[frozenset[str]] = frozenset(
         "Code Review",
         "Weekly Update",
         "Office Hours",
-        "New York",  # a place in a generated distractor, not a person
+        "New York",
     }
 )
 
-#: Rules whose matches are never redacted, only reported.
 NON_REDACTING_SEVERITIES: Final[frozenset[str]] = frozenset({"block", "warn"})
 
 
 def rules_for_layer(layer: str) -> tuple[Rule, ...]:
-    """Every rule belonging to one layer."""
     return tuple(rule for rule in ALL_RULES if rule.layer == layer)
 
 
 def is_allowlisted(kind: str, matched: str) -> bool:
-    """Whether a match is a known false positive."""
     if kind == "email":
         return bool(EMAIL_ALLOWLIST.search(matched))
     if kind == "uuid":

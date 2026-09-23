@@ -1,23 +1,7 @@
-"""The fourteen promotion gates.
-
-Promotion is the only path into a dataset. Every gate runs — there is no
-short-circuit — so one run tells you everything wrong with a candidate rather
-than one thing at a time. The cost is a few wasted checks on a doomed candidate;
-the benefit is that fixing three problems takes one cycle instead of three.
-
-**Mandatory-ness is computed from this table, not declared beside it.**
-``GateSpec.bypassable`` defaults to ``False``, and ``MANDATORY_GATE_IDS`` is
-derived from :data:`GATES`. A gate added without thinking about it is therefore
-mandatory, and making one bypassable requires an explicit edit that shows up in
-review. The alternative — a hand-maintained list of mandatory ids — drifts the
-first time somebody adds a gate and forgets to update it, and it drifts silently
-in the permissive direction.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Final
 
@@ -25,26 +9,17 @@ from kleos_training_data.promotion.context import PromotionContext
 
 
 class GateStatus(str, Enum):
-    """Outcome of one gate."""
-
     PASS = "PASS"
     FAIL = "FAIL"
     WARN = "WARN"
-    #: Bypassed by an explicit policy. Only ever possible for a bypassable gate.
     BYPASSED = "BYPASSED"
 
 
 @dataclass(frozen=True)
 class GateOutcome:
-    """What a gate concluded."""
-
     status: GateStatus
     message: str = ""
-    evidence: dict[str, str] = None  # type: ignore[assignment]
-
-    def __post_init__(self) -> None:
-        if self.evidence is None:
-            object.__setattr__(self, "evidence", {})
+    evidence: dict[str, str] = field(default_factory=dict)
 
     @property
     def failed(self) -> bool:
@@ -68,22 +43,11 @@ GateFn = Callable[[PromotionContext], GateOutcome]
 
 @dataclass(frozen=True)
 class GateSpec:
-    """One gate: what it checks, and whether it may ever be skipped."""
-
     id: str
     description: str
     check: GateFn
-    #: Defaults to False. A new gate is mandatory unless somebody deliberately
-    #: says otherwise, in a diff a reviewer will see.
     bypassable: bool = False
-    #: Whether a failure here is a privacy incident rather than a quality issue.
-    #: Drives exit code 4 and the incident-response path.
     privacy: bool = False
-
-
-# ---------------------------------------------------------------------------
-# The gates
-# ---------------------------------------------------------------------------
 
 
 def _g01_staging_integrity(ctx: PromotionContext) -> GateOutcome:
@@ -154,7 +118,6 @@ def _g07_private_fact(ctx: PromotionContext) -> GateOutcome:
             verdict=verdict,
             signals=ctx.fact_signal_ids(),
         )
-    # needs_fact_review: a human must have decided it, on the record.
     if ctx.human is not None and ctx.human.gates.policy_not_facts == "PASS":
         return ok(f"verdict {verdict}, cleared by a human on the record")
     return fail(
@@ -266,8 +229,6 @@ def _g14_contract_render(ctx: PromotionContext) -> GateOutcome:
     return ok("renders and re-parses identically")
 
 
-#: The table. Order is execution order, and it is meaningful: cheap structural
-#: checks first, so a malformed candidate fails before an expensive corpus scan.
 GATES: Final[tuple[GateSpec, ...]] = (
     GateSpec("G01_STAGING_INTEGRITY", "The staged record is intact.", _g01_staging_integrity),
     GateSpec("G02_SCHEMA_VALID", "The payload satisfies the public contract.", _g02_schema_valid),
@@ -291,24 +252,12 @@ GATES: Final[tuple[GateSpec, ...]] = (
     ),
     GateSpec("G09_REVIEW_APPROVED", "The review approves it.", _g09_review_approved),
     GateSpec("G10_PROVENANCE", "The lane and source permit promotion.", _g10_provenance),
-    # The one genuinely bypassable gate. Piloting an unregistered axis is a
-    # legitimate thing to do while deciding whether to register it upstream, and
-    # a missing `domain` is caught by G02 anyway since the contract requires it.
     GateSpec(
         "G11_COVERAGE_AXES",
         "Required axes are present.",
         _g11_coverage_axes,
         bypassable=True,
     ),
-    # Mandatory, despite an earlier draft marking it bypassable "for near
-    # duplicates only". That reasoning was wrong about its own mechanism: a
-    # bypassed gate does not run at all, so the bypass would have skipped exact
-    # and normalized duplicates too.
-    #
-    # No bypass is needed. The gate already distinguishes them itself — exact and
-    # normalized duplicates FAIL, near-duplicates WARN, and a WARN does not block
-    # unless `strict_warnings` is set. A human weighs the near-duplicate; nobody
-    # gets to wave through an exact one.
     GateSpec(
         "G12_CORPUS_DEDUP",
         "Not a duplicate of something already promoted.",
@@ -318,15 +267,12 @@ GATES: Final[tuple[GateSpec, ...]] = (
     GateSpec("G14_CONTRACT_RENDER", "Renders to the exact public contract.", _g14_contract_render),
 )
 
-#: Derived from the table, never hand-maintained. This is mechanism #1 of four.
 MANDATORY_GATE_IDS: Final[frozenset[str]] = frozenset(
     spec.id for spec in GATES if not spec.bypassable
 )
 
-#: The only ids ``--force`` may ever cover.
 BYPASSABLE_GATE_IDS: Final[frozenset[str]] = frozenset(spec.id for spec in GATES if spec.bypassable)
 
-#: Gates whose failure is a privacy incident.
 PRIVACY_GATE_IDS: Final[frozenset[str]] = frozenset(spec.id for spec in GATES if spec.privacy)
 
 GATES_BY_ID: Final[dict[str, GateSpec]] = {spec.id: spec for spec in GATES}

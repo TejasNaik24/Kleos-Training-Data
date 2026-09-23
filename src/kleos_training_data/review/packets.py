@@ -1,18 +1,3 @@
-"""Reviewer packets: the one place candidate text is meant to be read.
-
-Logs never carry content. Reports never carry content. The packet does, because
-a human cannot judge whether an example teaches a policy without reading it. It
-is written to a git-ignored directory and is the reason ``redact()`` refuses to
-print previews elsewhere — there is somewhere proper to look.
-
-The packet is built to make the *right* question easy to answer. It leads with
-the scenario's ``policy_claim`` and ``anti_claim``, so the reviewer is asked
-"does this teach that?" rather than the much weaker "does this look fine?". It
-inlines the privacy detections and fact-risk spans next to the text they refer
-to. And it shows the nearest already-promoted examples, so redundancy is visible
-*before* approval rather than at deduplication afterwards.
-"""
-
 from __future__ import annotations
 
 import json
@@ -27,17 +12,13 @@ from kleos_training_data.review.llm_schema import REVIEW_RESPONSE_SCHEMA
 from kleos_training_data.review.reviewers import render_instructions
 from kleos_training_data.review.rubric import DIMENSIONS, HARD_GATES
 
-#: How many near neighbours to show per candidate.
 DEFAULT_NEIGHBOURS: int = 3
 
-#: Similarity below which a neighbour is not worth showing.
 NEIGHBOUR_FLOOR: float = 0.35
 
 
 @dataclass
 class PacketItem:
-    """One candidate as a reviewer sees it."""
-
     candidate_id: str
     content_hash: str
     task: str
@@ -53,7 +34,6 @@ class PacketItem:
     contract_valid: bool = True
 
     def to_machine_dict(self) -> dict[str, Any]:
-        """The form a machine reviewer receives."""
         return {
             "candidate_id": self.candidate_id,
             "task": self.task,
@@ -72,14 +52,11 @@ class PacketItem:
 
 @dataclass
 class ReviewPacket:
-    """A batch of candidates prepared for review."""
-
     packet_id: str
     batch_id: str
     items: list[PacketItem] = field(default_factory=list)
 
     def write(self, directory: Path | str) -> Path:
-        """Write ``packet.md``, ``packet.jsonl`` and ``packet.meta.json``."""
         root = Path(directory)
         root.mkdir(parents=True, exist_ok=True)
 
@@ -108,7 +85,6 @@ class ReviewPacket:
         return root
 
     def render_markdown(self) -> str:
-        """The human-readable packet."""
         lines: list[str] = [
             f"# Review packet {self.packet_id}",
             "",
@@ -227,7 +203,6 @@ class ReviewPacket:
 def nearest_neighbours(
     text: str, corpus: dict[str, str], *, limit: int = DEFAULT_NEIGHBOURS
 ) -> list[tuple[str, float]]:
-    """Most similar entries in ``corpus``, by Jaccard over normalized shingles."""
     if not corpus:
         return []
     target = shingles(normalize_text(text))
@@ -243,7 +218,6 @@ def nearest_neighbours(
 
 
 def machine_prompt(item: PacketItem) -> str:
-    """The full prompt a machine reviewer receives for one candidate."""
     return (
         render_instructions()
         + "\n\nCandidate:\n"

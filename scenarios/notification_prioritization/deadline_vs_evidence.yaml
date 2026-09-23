@@ -10,17 +10,11 @@ description: >
   The correct ranking follows expected cost of delay, not any single surface
   signal.
 
-# What an example from this family teaches. Stated as a rule, so it transfers to
-# a situation with entirely different entities.
 policy_claim: >
   Rank by where delay costs the most: nearness of deadline, discounted by how
   well the claim is actually supported and by how much the outcome matters. Name
   the factor that decided it.
 
-# The surface rule a lazy model might learn instead. This is what the
-# perturbations and holdouts are built to catch — a model that learned any of
-# these will pass the easy cases and fail the reordered, reformatted and
-# unseen-entity ones.
 anti_claim: >
   Pick whichever item is listed first, or whichever has the nearest date
   regardless of whether anyone has verified it.
@@ -47,10 +41,6 @@ generation:
   n_base: 6
   seed: 1712
   sampling: stratified
-  # Each of these must leave the decision unchanged. validate_scenarios.py
-  # generates every one and compares the computed decision against the base;
-  # a perturbation that changes the answer fails the scenario rather than
-  # quietly producing an equivalence group whose members disagree.
   equivalence_groups:
     - kind: paraphrase
       count: 1
@@ -60,12 +50,8 @@ generation:
       count: 1
 
 holdout:
-  # Test-split examples use entities the model has never seen, so a correct
-  # answer cannot come from having memorized a name.
   ood_shift: unseen_entities
   reserve_entity_pools: [generic_pool_z]
-  # json is held out as a format so we can ask whether the policy survives a
-  # presentation the model was never trained on.
   reserve_formats: [json]
 
 review:

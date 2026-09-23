@@ -1,16 +1,3 @@
-#!/usr/bin/env python3
-"""Run a machine reviewer over a packet.
-
-    python scripts/run_llm_review.py --packet-id pk-slice-001 --reviewer mock
-
-A machine review is a structured *opinion*. It cannot approve anything: the
-output is validated against the response schema and then against the pydantic
-model, and a human decision is still required before promotion.
-
-The mock reviewer is deterministic and needs no network. CI uses it, which is
-what keeps the review stage testable without a key.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -31,9 +18,7 @@ from kleos_training_data.staging.store import write_record
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
-    )
+    parser = argparse.ArgumentParser()
     parser.add_argument("--packet-id", required=True, help="Packet to review.")
     parser.add_argument("--reviewer", default="mock", help="Reviewer backend (default: mock).")
     parser.add_argument("--model", help="Model name, for a real reviewer.")

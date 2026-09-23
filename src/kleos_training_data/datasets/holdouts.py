@@ -1,21 +1,3 @@
-"""OOD holdouts, declared in advance rather than discovered by a seed.
-
-The public splitter will happily choose holdout values itself, in stable-hash
-order, when none are configured. That is fine for development and useless for a
-research claim: an OOD result you can only describe *after* running the split is
-a description of where a hash landed, not a hypothesis you tested.
-
-So holdouts come from the scenario catalog. A scenario declares what it reserves
-and which shift kind that represents, and this module turns those declarations
-into the explicit ``holdout_values`` list handed to the splitter.
-
-Two failures are caught here rather than downstream, because both produce a
-release that looks fine:
-
-* A reserved value with **no coverage** yields a silently empty test split.
-* A reservation covering **everything** leaves no training data.
-"""
-
 from __future__ import annotations
 
 from collections import Counter
@@ -26,14 +8,12 @@ from kleos_training_data.contract.schemas import TrainingExample
 from kleos_training_data.errors import ConfigError
 from kleos_training_data.scenarios.models import Scenario
 
-#: Which example attribute each holdout declaration partitions on.
 _ATTRIBUTE_BY_DECLARATION: dict[str, str] = {
     "reserve_entity_pools": "entities",
     "reserve_formats": "format",
     "reserve_domains": "domain",
 }
 
-#: Which split strategy a given attribute implies.
 STRATEGY_BY_ATTRIBUTE: dict[str, str] = {
     "entities": "entity_holdout",
     "format": "format_holdout",
@@ -43,18 +23,14 @@ STRATEGY_BY_ATTRIBUTE: dict[str, str] = {
 
 @dataclass
 class HoldoutPlan:
-    """What a release intends to hold out, and why."""
-
     attribute: str | None = None
     values: list[str] = field(default_factory=list)
     ood_shifts: list[str] = field(default_factory=list)
-    #: Families that declared each reservation, for the provenance record.
     declared_by: dict[str, list[str]] = field(default_factory=dict)
     notes: list[str] = field(default_factory=list)
 
     @property
     def strategy(self) -> str | None:
-        """The split strategy this plan implies, if any."""
         return STRATEGY_BY_ATTRIBUTE.get(self.attribute or "")
 
     @property
@@ -73,7 +49,6 @@ class HoldoutPlan:
 
 
 def collect_declarations(scenarios: list[Scenario]) -> dict[str, dict[str, list[str]]]:
-    """Gather every ``holdout.reserve_*`` declaration, keyed by attribute."""
     collected: dict[str, dict[str, list[str]]] = {}
     for scenario in scenarios:
         for declaration, attribute in _ATTRIBUTE_BY_DECLARATION.items():
@@ -89,20 +64,6 @@ def resolve_holdouts(
     attribute: str | None = None,
     require_coverage: bool = True,
 ) -> HoldoutPlan:
-    """Turn catalog declarations into an explicit holdout plan.
-
-    Args:
-        examples: The promoted corpus a release will be built from.
-        scenarios: The catalog those examples came from.
-        attribute: Force one attribute. Defaults to whichever the catalog
-            declares, and raises if the catalog declares more than one — holding
-            out two attributes at once confounds the result.
-        require_coverage: Fail when a reserved value has no examples.
-
-    Raises:
-        ConfigError: On an ambiguous attribute, an uncovered reservation, or a
-            reservation that would empty the training set.
-    """
     declarations = collect_declarations(scenarios)
 
     if attribute is None:
@@ -180,7 +141,6 @@ def resolve_holdouts(
 
 
 def _attribute_of(example: TrainingExample, attribute: str) -> str:
-    """Read the attribute a holdout partitions on. Mirrors the public splitter."""
     if attribute == "domain":
         return example.variation_axes.domain
     if attribute == "entities":

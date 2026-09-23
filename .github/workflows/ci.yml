@@ -8,13 +8,8 @@ on:
 
 env:
   PYTHONUNBUFFERED: "1"
-  # Belt and braces. collection/guard.py refuses a production capture whenever
-  # CI is set, and GitHub sets it — but nothing in CI should be reaching for a
-  # backend at all, so make the intent explicit rather than implicit.
   KLEOS_ALLOW_PRODUCTION_CAPTURE: ""
 
-# No job in this file uses `secrets`. CI must never need a production
-# credential, and must never touch a private capture.
 jobs:
   privacy:
     name: private-data scan
@@ -22,15 +17,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # Full history: a secret introduced three commits ago and deleted in
-          # the next one is still in the tree someone will clone.
           fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      # Deliberately no `pip install`. The scanner imports nothing outside the
-      # standard library so that a leaked secret fails the build in seconds
-      # rather than after a dependency install that might itself fail.
       - name: Scan for secrets and private data
         run: python scripts/check_no_private_data.py .
 
@@ -70,9 +60,6 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - run: pip install -e ".[dev]"
-      # Bare `pytest`, matching the Makefile. `python -m pytest` also puts the
-      # working directory on sys.path, which hides the import errors this would
-      # otherwise catch.
       - run: pytest -v --tb=short
 
   workspace:
@@ -84,11 +71,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -e ".[dev]"
-      # Creates the zones and then asks real git whether it would ignore what
-      # lands in them. Exits 4 if any private path is committable.
       - run: python scripts/init_workspace.py
-      # The zones must still be clean after initialization — nothing the script
-      # creates may be trackable beyond the four .gitkeep files.
       - name: Nothing new is committable
         run: |
           git add -A --dry-run 2>/dev/null | tee /tmp/staged.txt
@@ -105,13 +88,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      # Installs kleos-models pinned to an exact commit, so the public contract
-      # cannot change underneath a release without this job noticing.
       - run: pip install -e ".[dev,compat]"
       - run: pytest -v -m requires_kleos_models
-      # --strict, so an absent kleos-models fails rather than skipping. A
-      # compatibility check that passes because it could not run produces a
-      # green build that means nothing.
       - run: python scripts/check_contract_compat.py --strict --show-deltas
 
   slice:
@@ -122,25 +100,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      # `make slice-clean slice` shells out to `.venv/bin/python` (the same
-      # layout local development uses), so this job needs the venv to exist —
-      # a plain `pip install` into the runner's interpreter leaves that path
-      # missing and every make target in this job fails immediately.
       - run: make install
       - run: echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
-      # A fresh checkout has never had init_workspace.py secure the vault, and
-      # git does not track directory permissions — so the vault genuinely is
-      # group/world-readable until this runs. slice-clean calls it too, but
-      # running it here first means doctor.py's check reflects the workspace
-      # this repo actually maintains, not a checkout nobody has initialized yet.
       - run: python scripts/init_workspace.py
-      # The environment diagnostic must not print a secret value. It reports
-      # presence only, so it is safe to run in a public log.
       - run: python scripts/doctor.py
-      # The whole chain, offline, with no credentials and no private data:
-      # scenario -> mock capture -> normalize -> sanitize -> review -> promote
-      # -> split -> seal -> verify -> coverage.
       - run: make slice-clean slice
-      # Re-verify the sealed release independently, so post-hoc drift fails a
-      # build rather than surviving quietly.
       - run: python scripts/verify_release.py --release releases/kleos-policy-v0.0.1 --strict

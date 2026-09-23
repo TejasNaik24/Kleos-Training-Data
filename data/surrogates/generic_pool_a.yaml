@@ -1,18 +1,3 @@
-# Fictional project and workstream names.
-#
-# Every value here is invented. Nothing in this file refers to a real
-# organization, product or person — see PRIVACY.md, "Fixture policy".
-#
-# Names are deliberately bland and interchangeable. A memorable name is a name a
-# model can memorize, and the whole point of a surrogate is that it carries no
-# information about anybody.
-#
-# Widened from 16 to 32 for v0.0.3. `normalize_text` collapses digit runs before
-# near-duplicate comparison, so two situations differing only in their deadline
-# numbers look near-identical once normalized. With a 16-name pool and families
-# sampling 18-24 points, name reuse then pushed 33 train/validation pairs over
-# the 0.85 similarity threshold. More names means structurally distinct points
-# stay lexically distinct.
 kind: project
 values:
   - Northwind

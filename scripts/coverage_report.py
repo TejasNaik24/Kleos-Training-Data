@@ -1,16 +1,3 @@
-#!/usr/bin/env python3
-"""Report what a corpus actually covers.
-
-    python scripts/coverage_report.py --release releases/kleos-policy-v0.1.0
-    python scripts/coverage_report.py --promoted --json reports/coverage/latest.json
-
-A count is not a research claim. This reports the joint structure — task x
-domain, task x urgency, and so on — and names the cells that are empty or thin.
-
-Advisory by default: exits 0 whatever it finds, because a thin cell is a decision
-to make rather than an error. ``--fail-on`` makes it a gate when you want one.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -37,9 +24,7 @@ from kleos_training_data.staging.store import iter_records
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
-    )
+    parser = argparse.ArgumentParser()
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--release", type=Path, help="A sealed release directory.")
     source.add_argument("--promoted", action="store_true", help="The promoted pool.")

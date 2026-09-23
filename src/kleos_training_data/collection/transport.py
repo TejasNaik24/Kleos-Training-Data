@@ -1,21 +1,3 @@
-"""HTTP transport: retries, rate limiting, and logging that cannot leak.
-
-Only the real backend adapters need this, so ``httpx`` lives in the ``collect``
-extra and is imported lazily. The offline pipeline — and therefore CI and the
-whole test suite — never touches it.
-
-Three things are deliberate:
-
-* **A per-batch retry budget.** Per-request retry limits let a degraded backend
-  turn a 50-scenario run into 200 requests against a service that is already
-  struggling. The budget is shared, so the run gives up rather than piling on.
-* **Retry only what retrying can fix.** A 401 or a 422 will fail identically the
-  second time; retrying them wastes the budget and delays the real error.
-* **Logging is counts and timings only.** Never a request body, never a response
-  body, at any level. A log line is the easiest way for private content to
-  escape, because logs get pasted into issues.
-"""
-
 from __future__ import annotations
 
 import random
@@ -29,16 +11,12 @@ from kleos_training_data.logging_utils import SafeSecret, get_logger
 
 logger = get_logger(__name__)
 
-#: Statuses worth retrying. Everything else fails identically on a second try.
 RETRYABLE_STATUSES: frozenset[int] = frozenset({408, 429, 500, 502, 503, 504})
 
-#: Never retried, however tempting. A 401 means the credential is wrong; a 422
-#: means the request is wrong. Repeating either just delays the real error.
 NEVER_RETRY: frozenset[int] = frozenset({400, 401, 403, 404, 405, 422})
 
 
 def require_httpx() -> Any:
-    """Import httpx, with an actionable error when the extra is missing."""
     try:
         import httpx
     except ImportError as exc:
@@ -50,12 +28,9 @@ def require_httpx() -> Any:
 
 @dataclass
 class RetryPolicy:
-    """How hard to try, and when to stop."""
-
     max_attempts: int = 4
     base_delay: float = 0.5
     max_delay: float = 20.0
-    #: Total retries allowed across a whole batch, not per request.
     budget: int = 20
     _spent: int = field(default=0, init=False)
 
@@ -68,14 +43,13 @@ class RetryPolicy:
             return False
         if not self.budget_remaining:
             return False
-        if status is None:  # timeout or connection error
+        if status is None:
             return True
         if status in NEVER_RETRY:
             return False
         return status in RETRYABLE_STATUSES
 
     def delay_for(self, attempt: int, *, retry_after: str | None = None) -> float:
-        """Full-jitter exponential backoff, honouring ``Retry-After``."""
         if retry_after:
             explicit = _parse_retry_after(retry_after)
             if explicit is not None:
@@ -88,7 +62,6 @@ class RetryPolicy:
 
 
 def _parse_retry_after(value: str) -> float | None:
-    """``Retry-After`` as seconds. Accepts both integer and HTTP-date forms."""
     try:
         return float(value)
     except ValueError:
@@ -106,8 +79,6 @@ def _parse_retry_after(value: str) -> float | None:
 
 @dataclass
 class RateLimiter:
-    """Token bucket, shared across workers."""
-
     requests_per_minute: float = 20.0
     burst: int = 5
     _tokens: float = field(default=0.0, init=False)
@@ -117,7 +88,6 @@ class RateLimiter:
         self._tokens = float(self.burst)
 
     def acquire(self) -> float:
-        """Block until a request is permitted. Returns how long it waited."""
         rate = self.requests_per_minute / 60.0
         waited = 0.0
         while True:
@@ -134,13 +104,6 @@ class RateLimiter:
 
 @dataclass
 class TransportConfig:
-    """Everything the client needs, with conservative defaults.
-
-    Defaults are deliberately timid. A collection run that hammers a production
-    deployment is a self-inflicted incident, and the cost of being slow is a few
-    minutes.
-    """
-
     base_url: str
     token: SafeSecret | None = None
     timeout_seconds: float = 60.0
@@ -151,8 +114,6 @@ class TransportConfig:
 
 @dataclass
 class Response:
-    """What a request returned. Bodies are held, never logged."""
-
     status: int
     headers: dict[str, str]
     text: str
@@ -163,8 +124,6 @@ class Response:
 
 
 class HttpTransport:
-    """A small, careful HTTP client."""
-
     def __init__(self, config: TransportConfig) -> None:
         self.config = config
         self._client: Any | None = None
@@ -175,8 +134,6 @@ class HttpTransport:
             "Accept": "text/event-stream, application/json",
         }
         if self.config.token is not None and self.config.token.is_set:
-            # The single place the credential is revealed. A test asserts
-            # `.reveal()` appears in exactly one non-test file.
             headers["Authorization"] = f"Bearer {self.config.token.reveal()}"
         return headers
 
@@ -203,9 +160,8 @@ class HttpTransport:
         data: dict[str, Any] | None = None,
         params: dict[str, Any] | None = None,
     ) -> Response:
-        """Issue one request, retrying only what retrying can fix."""
         httpx = require_httpx()
-        if self._client is None:  # pragma: no cover - guarded by the context manager
+        if self._client is None:
             raise CaptureError("HttpTransport must be used as a context manager.")
 
         headers = {**self._headers(), "X-Request-Id": request_id}
@@ -234,7 +190,6 @@ class HttpTransport:
             except (httpx.TimeoutException, httpx.TransportError):
                 retry_after = None
 
-            # Counts and timings only. No body, no headers, no URL with a query.
             logger.warning(
                 "request_id=%s attempt=%d status=%s waited_ms=%d budget_left=%d",
                 request_id,
@@ -269,11 +224,5 @@ class HttpTransport:
     def stream_lines(
         self, method: str, path: str, *, request_id: str, data: dict[str, Any] | None = None
     ) -> tuple[list[str], Response]:
-        """Issue a request and collect an SSE body as lines.
-
-        No retry: a stream that failed midway has already delivered a partial
-        answer, and re-requesting would produce a second, differently-truncated
-        one. A truncated capture must fail rather than be silently completed.
-        """
         response = self.request(method, path, request_id=request_id, data=data)
         return response.text.splitlines(), response

@@ -1,17 +1,3 @@
-#!/usr/bin/env python3
-"""Sanitize normalized candidates.
-
-    python scripts/sanitize_candidates.py --batch slice-001
-    python scripts/sanitize_candidates.py --add-vault-entry ORG
-
-Runs four detection layers, redacts what can be redacted, substitutes fictional
-surrogates, and assesses private-fact risk. Candidates carrying a secret are
-rejected outright rather than cleaned — a credential means the capture path is
-compromised, and quietly replacing the string would hide that.
-
-Exits 4 if any secret fires anywhere in the batch.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -50,11 +36,6 @@ from kleos_training_data.staging.store import iter_records, write_record
 
 
 def _add_vault_entry(workspace: Workspace, slot: str) -> int:
-    """Read a literal from stdin and register it.
-
-    From stdin, never argv: a real name passed as an argument lands in shell
-    history, in the process table, and in any terminal recording.
-    """
     if slot not in VAULT_SLOTS:
         print(f"✗ Unknown slot {slot!r}. Valid: {', '.join(VAULT_SLOTS)}", file=sys.stderr)
         return 1
@@ -76,9 +57,7 @@ def _add_vault_entry(workspace: Workspace, slot: str) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
-    )
+    parser = argparse.ArgumentParser()
     add_batch_argument(parser, required=False)
     parser.add_argument(
         "--add-vault-entry",
@@ -150,7 +129,6 @@ def main(argv: list[str] | None = None) -> int:
             )
             continue
 
-        # Sanitization changes content, so the id changes with it.
         new_id = example_id(result.payload)
         sanitized = SanitizedCandidate(
             candidate_id=new_id,

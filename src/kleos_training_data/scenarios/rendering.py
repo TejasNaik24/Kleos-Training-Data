@@ -1,19 +1,3 @@
-"""Render a situation into a prompt, and a decision into an answer.
-
-Presentation is a variation axis, not a detail. The same situation rendered as a
-bulleted list, a Slack thread and a GitHub issue is the *same problem*, and a
-model that only solves the format it was trained on has learned a template
-rather than a policy. That is why the input formats here go well beyond "bullets
-or prose", and why ``unseen_formats`` is a registered OOD shift.
-
-The answer renderers are deliberately plain. A training target should read like
-a good answer, not like a model performing thoroughness: it states the decision,
-names the factor that decided it, and stops. Every claim it makes is derived from
-the same computation that produced the ranking, so it cannot assert anything the
-prompt does not support — which is exactly what the ``no_unsupported_claims``
-review gate checks for.
-"""
-
 from __future__ import annotations
 
 import json
@@ -43,8 +27,6 @@ __all__ = [
     "summarize_items",
 ]
 
-#: Input formats the prompt can be rendered in. The first three are ordinary;
-#: the rest exist so a format holdout has somewhere unseen to hold out to.
 PROMPT_FORMATS: Final[tuple[str, ...]] = (
     "bullets",
     "prose",
@@ -54,22 +36,10 @@ PROMPT_FORMATS: Final[tuple[str, ...]] = (
     "calendar",
 )
 
-#: Output formats an answer can be rendered in.
 ANSWER_FORMATS: Final[tuple[str, ...]] = ("bullets", "prose", "json")
 
 
-# ---------------------------------------------------------------------------
-# Prompt rendering
-# ---------------------------------------------------------------------------
-
-
 def _scope_suffix(item: Item, situation: Situation) -> str:
-    """Marks which workspace an item belongs to, for the workspace framing.
-
-    Without this the prompt says "working only in the workspace I named" while
-    naming no workspace and marking no item as belonging to one — so the correct
-    answer is unstated in the input and the example teaches nothing about scope.
-    """
     if situation.framing != "workspace":
         return ""
     if item.in_scope:
@@ -169,7 +139,6 @@ _PROMPT_RENDERERS = {
 
 
 def render_prompt(situation: Situation) -> str:
-    """Render the user turn in the situation's declared input format."""
     fmt = situation.axes.get("format", "bullets")
     renderer = _PROMPT_RENDERERS.get(fmt)
     if renderer is None:
@@ -180,40 +149,21 @@ def render_prompt(situation: Situation) -> str:
         )
 
     parts: list[str] = []
-    # The information need comes first, where a question refers back to it.
-    # "Which of these should I check to answer that?" has no antecedent
-    # otherwise, and an unanswerable prompt cannot have a correct answer.
     if situation.need:
         parts.append(f"{situation.need}\n")
     if situation.framing == "workspace" and situation.workspace_name:
         parts.append(f"Active workspace: {situation.workspace_name}\n")
     parts.append(renderer(situation))
     if situation.distractors:
-        # Irrelevant context goes *after* the items, where it is most likely to
-        # displace the relevant material from a model's attention.
         parts.append("\nAlso on my plate: " + " ".join(situation.distractors))
     parts.append(f"\n{situation.question}")
     return "\n".join(parts).strip()
-
-
-# ---------------------------------------------------------------------------
-# Answer rendering
-# ---------------------------------------------------------------------------
 
 
 def _answer_bullets(situation: Situation, decision: Decision) -> str:
     if decision.abstained:
         first, second = (situation.item(k) for k in decision.ranking[:2])
         if decision.deciding_factor == "ask_before_crossing":
-            # A third kind of not-answering, and it has to read differently from
-            # the other two: the answer exists, it is simply on the other side of
-            # a boundary the user did not open. Offering to cross is the help;
-            # crossing silently is the failure.
-            # Phrased to avoid a sentence-initial capitalised pronoun: the
-            # private-fact assessor treats an unexplained capitalised token in an
-            # assistant turn as a possible remembered entity, and "Your call"
-            # tripped it on 60 examples. Rewriting the line is the repository's
-            # stated preference over adding a scanner exemption.
             return (
                 f"- Nothing inside {situation.workspace_name} is solid enough to answer "
                 f"this.\n"
@@ -222,8 +172,6 @@ def _answer_bullets(situation: Situation, decision: Decision) -> str:
                 f"boundary is yours to open, not mine."
             )
         if decision.deciding_factor == "request_ambiguous":
-            # Referential, not epistemic: verifying the candidates would not help,
-            # because the question has not been pinned down yet.
             return (
                 f"- I could answer this several ways and I do not know which one you "
                 f"want.\n"
@@ -238,8 +186,6 @@ def _answer_bullets(situation: Situation, decision: Decision) -> str:
                 f"me stands."
             )
         if decision.deciding_factor == "missing_input":
-            # A missing variable, not a narrow margin. The two need different
-            # answers: one asks a question, the other goes and checks something.
             return (
                 f"- I can't answer this yet, and the gap is not a close call — "
                 f"something the answer depends on is missing.\n"
@@ -334,18 +280,6 @@ def _answer_json(situation: Situation, decision: Decision) -> str:
 
 
 def _factor_sentence(situation: Situation, decision: Decision) -> str:
-    """One sentence naming why the top item won, using only prompt facts.
-
-    Phrased as a *rule* rather than as a fact about these items, so the sentence
-    a model learns to produce is transferable. "Nearest deadline wins when the
-    evidence is comparable" survives into a situation with different names;
-    "Project X is first because it is due Friday" does not.
-
-    Framing-aware, because it was not: a memory-conflict answer whose factor was
-    "deadline" rendered "Copperline is due in 2 days against due in 2 days" —
-    the wrong tense for a stored record, and a comparison between two equal
-    values presented as though it separated them.
-    """
     f = framing_of(situation)
     top = situation.item(decision.ranking[0])
     runner_up = situation.item(decision.ranking[1])
@@ -378,18 +312,11 @@ def _factor_sentence(situation: Situation, decision: Decision) -> str:
             f"one would read more than the question needs."
         )
 
-    # Only claim a factor is comparable after checking it. `_deciding_factor`
-    # returns the factor with the *largest* gap, which says nothing about how
-    # large the others are — so the templates below used to assert "timing and
-    # evidence are comparable" over a 31-day gap and two evidence grades. The
-    # ranking was right and the stated reason was false, which teaches a model to
-    # assert comparability it has not verified.
     same_evidence = top.evidence == runner_up.evidence
     close_timing = top.time_phrase(f.time_sense) == runner_up.time_phrase(f.time_sense)
     same_impact = top.impact == runner_up.impact
 
     def _aside() -> str:
-        """Name what genuinely does not separate them, and nothing else."""
         held = []
         if same_evidence:
             held.append(f"{f.evidence_label} is the same on both")
@@ -400,13 +327,6 @@ def _factor_sentence(situation: Situation, decision: Decision) -> str:
         return f" {'; '.join(held).capitalize()}." if held else ""
 
     if factor == "deadline":
-        # Compare the *phrases*, not the day counts. 8 days and 9 days are
-        # different numbers that both render "due in about 1 week", so a
-        # day-count guard let through 23 answers saying "the nearer deadline
-        # wins, and X is due in about 1 week against due in about 1 week" — a
-        # comparison of a phrase with itself, offered as the reason for a
-        # ranking. The reader cannot act on it and the model learns a sentence
-        # shape that asserts nothing.
         if top.time_phrase(f.time_sense) == runner_up.time_phrase(f.time_sense):
             return (
                 f"Nothing in what you have separates {top.name} from {runner_up.name} — "
@@ -485,32 +405,14 @@ _ANSWER_RENDERERS = {
 
 
 def render_answer(situation: Situation, decision: Decision) -> str:
-    """Render the assistant turn.
-
-    The answer format follows the prompt format where one applies, and falls
-    back to bullets for the structural formats (a Slack thread is an input shape,
-    not an output shape).
-    """
     fmt = situation.axes.get("format", "bullets")
     renderer = _ANSWER_RENDERERS.get(fmt, _answer_bullets)
     return renderer(situation, decision)
 
 
 def render_system_prompt(situation: Situation) -> str:
-    """The instruction the model is operating under, for this situation's framing.
-
-    Deliberately states the *policy*, not the answer. A system prompt that named
-    the winning item would make every example trivially solvable and teach
-    nothing.
-
-    It took the situation as an argument and ignored it for the whole of the
-    first catalog, so all seven tasks shipped the prioritization instruction —
-    including tool_routing, whose examples were told to "prioritize competing
-    work" and handed a list of candidate sources.
-    """
     return framing_of(situation).system
 
 
 def summarize_items(items: tuple[Item, ...]) -> str:
-    """Compact one-line summary, for reviewer packets and reports."""
     return "; ".join(f"{i.key}={i.name}({i.deadline_days}d,{i.evidence},{i.impact})" for i in items)

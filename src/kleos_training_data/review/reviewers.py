@@ -1,16 +1,3 @@
-"""Machine reviewers.
-
-:class:`MockReviewer` is deterministic and rule-driven. It is what CI uses and
-what the test suite exercises, so the entire review stage runs with no network
-and no API key. That is not a convenience — a review stage testable only against
-a live model is one whose behaviour nobody can pin down, and whose failures
-arrive as flakes.
-
-The real reviewer arrives in Phase J behind the ``review`` extra. Neither one
-gets to approve anything: both produce a structured opinion that deterministic
-gates and a human then act on.
-"""
-
 from __future__ import annotations
 
 from typing import Any, Protocol, runtime_checkable
@@ -23,13 +10,9 @@ from kleos_training_data.review.rubric import DIMENSIONS, HARD_GATES
 
 @runtime_checkable
 class LLMReviewer(Protocol):
-    """What every machine reviewer must provide."""
-
     name: str
 
-    def review(self, packet_item: dict[str, Any]) -> LLMReview:
-        """Score one candidate."""
-        ...
+    def review(self, packet_item: dict[str, Any]) -> LLMReview: ...
 
 
 REVIEW_INSTRUCTIONS = """\
@@ -56,7 +39,6 @@ Respond with JSON matching the supplied schema. Nothing else.
 
 
 def render_instructions() -> str:
-    """The instruction block sent to a machine reviewer."""
     return REVIEW_INSTRUCTIONS.format(
         dimensions="\n".join(f"  - {k}: {v}" for k, v in DIMENSIONS.items()),
         gates="\n".join(f"  - {k}: {v}" for k, v in HARD_GATES.items()),
@@ -64,15 +46,6 @@ def render_instructions() -> str:
 
 
 class MockReviewer:
-    """A deterministic reviewer derived from the deterministic signals.
-
-    It does not pretend to have an opinion. It reads the privacy scan, the
-    private-fact assessment and the structural properties of the example, and
-    scores from those. That makes it useful for exactly one thing — proving the
-    review *stage* works end to end — and useless for judging quality, which is
-    the honest division of labour.
-    """
-
     name = "mock"
 
     def __init__(self, *, base_score: int = 4) -> None:
@@ -83,11 +56,6 @@ class MockReviewer:
         detections = scan_payload(payload)
         fact_risk = assess(payload)
 
-        # By the time review runs, the candidate is post-sanitization. So *any*
-        # surviving detection means redaction missed something — a `redact`
-        # severity hit here is not "handled", it is evidence that handling
-        # failed. Grading only `block` and `review` would let a surviving email
-        # address pass the gate that exists to catch it.
         blocking = [d for d in detections if d.severity == "block"]
         needs_review = [d for d in detections if d.severity in {"redact", "review"}]
 
@@ -128,7 +96,6 @@ class MockReviewer:
         if gates["schema_and_contract_valid"] == "FAIL":
             evidence["schema_and_contract_valid"] = "the payload failed contract validation"
 
-        # Scores derived from structural properties, not from taste.
         base = self.base_score
         scores = {
             "decision_correctness": base,
@@ -156,18 +123,6 @@ class MockReviewer:
 
 
 class AnthropicReviewer:
-    """A real model reviewer, behind the ``review`` extra.
-
-    It produces a structured opinion and nothing more. The output is validated
-    twice — JSON Schema then pydantic — and a human decision is still required
-    before anything can be promoted. There is no code path by which model prose
-    becomes an approval.
-
-    Refused when ``CI`` is set: an automated run has no human to own the
-    decision afterwards, and CI uses the deterministic MockReviewer so the
-    review stage stays testable without a key or a bill.
-    """
-
     name = "anthropic"
 
     def __init__(self, *, model: str = "claude-sonnet-5", max_retries: int = 2) -> None:
@@ -205,11 +160,6 @@ class AnthropicReviewer:
         return self._client
 
     def review(self, packet_item: dict[str, Any]) -> LLMReview:
-        """Score one candidate, retrying only a malformed generation.
-
-        A schema violation is worth one retry — the error names the field, which
-        is exactly what a retry prompt needs. Anything else is not.
-        """
         import json
 
         from kleos_training_data.errors import ReviewError
@@ -267,12 +217,10 @@ class AnthropicReviewer:
         )
 
 
-#: Registry. The real reviewer registers here once the `review` extra exists.
 REVIEWERS: dict[str, type] = {"mock": MockReviewer, "anthropic": AnthropicReviewer}
 
 
 def resolve_reviewer(name: str) -> LLMReviewer:
-    """Instantiate a reviewer by name."""
     from kleos_training_data.errors import ReviewError
 
     factory = REVIEWERS.get(name)

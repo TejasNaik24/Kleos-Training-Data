@@ -1,15 +1,3 @@
-"""Layered privacy detection, redaction and private-fact assessment.
-
-Four layers, deterministic and authoritative. An LLM may assist review; it never
-decides whether something is private.
-
-See PRIVACY.md for the reasoning, and note the division this package enforces:
-PII is a string problem with a mechanical fix, and a private fact is a semantic
-problem with none. The first is redacted here; the second is only ever flagged,
-because a heuristic confident enough to auto-reject would be confident enough to
-auto-approve, and neither is warranted.
-"""
-
 from __future__ import annotations
 
 from kleos_training_data.privacy.detect import (

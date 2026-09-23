@@ -1,20 +1,3 @@
-"""Backend adapters.
-
-The adapter boundary is ``ScenarioRequest -> RawCapture``; everything downstream
-sees only a ``RawCapture``. Three genuinely different response disciplines sit
-behind it — the real chat endpoint is a ~40-field multipart form returning an SSE
-stream, the mission and notification endpoints are plain JSON GETs, and the mock
-is a pure function — so a single client with ``isinstance`` branches would be
-unreadable.
-
-Only the mock adapter is implemented here. The real ones arrive after the
-vertical slice is proven, deliberately: the slice has to be demonstrable offline,
-in CI, with no credentials. If a real adapter were load-bearing for it, every
-test would depend on a live service holding one person's private records, and
-the first end-to-end run would create private data before any gate existed to
-catch it.
-"""
-
 from __future__ import annotations
 
 import hashlib
@@ -36,62 +19,38 @@ from kleos_training_data.staging.records import (
 
 @dataclass(frozen=True)
 class ScenarioRequest:
-    """One thing to ask a backend."""
-
     scenario: ScenarioRef
     system_prompt: str
     user_message: str
-    #: Contract-shaped axes, carried through so normalization need not re-derive.
     variation_axes: dict[str, str]
     group_id: str
     perturbation_of: str | None = None
     perturbation_kind: str | None = None
-    #: Set for the mock lane, which knows the answer the policy implies.
     expected_answer: str | None = None
     options: dict[str, Any] = field(default_factory=dict)
 
 
 @runtime_checkable
 class BackendAdapter(Protocol):
-    """What every adapter must provide."""
-
     name: str
     lane: CaptureLane
 
-    def endpoint(self) -> str:
-        """The path this adapter targets, for the audit record."""
-        ...
+    def endpoint(self) -> str: ...
 
-    def run(self, request: ScenarioRequest, *, batch_id: str) -> RawCapture:
-        """Execute one request and return an untrusted capture."""
-        ...
-
-
-# ---------------------------------------------------------------------------
-# SSE parsing — shared by the mock and, later, the real chat adapter
-# ---------------------------------------------------------------------------
+    def run(self, request: ScenarioRequest, *, batch_id: str) -> RawCapture: ...
 
 
 @dataclass(frozen=True)
 class SSEFrame:
-    """One server-sent event."""
-
     type: str
     data: dict[str, Any]
 
 
 def parse_sse_stream(lines: Iterator[str]) -> Iterator[SSEFrame]:
-    """Parse an SSE byte stream into frames.
-
-    Handles the cases the real endpoint actually produces: multi-line ``data:``
-    payloads, comment lines, and blank-line frame separators. A malformed frame
-    raises rather than being skipped — silently dropping frames would truncate an
-    answer without anything noticing.
-    """
     buffer: list[str] = []
     for raw in lines:
         line = raw.rstrip("\n")
-        if line.startswith(":"):  # comment / keepalive
+        if line.startswith(":"):
             continue
         if line == "":
             if buffer:
@@ -100,8 +59,6 @@ def parse_sse_stream(lines: Iterator[str]) -> Iterator[SSEFrame]:
             continue
         if line.startswith("data:"):
             buffer.append(line[len("data:") :].lstrip())
-        # `event:` and `id:` fields are ignored: the frame type travels inside
-        # the JSON payload for this backend.
     if buffer:
         yield _frame_from("\n".join(buffer))
 
@@ -121,13 +78,6 @@ def _frame_from(payload: str) -> SSEFrame:
 
 
 def collect_answer(frames: Iterator[SSEFrame]) -> tuple[str, dict[str, int]]:
-    """Assemble an answer from a frame stream.
-
-    Returns:
-        ``(answer_text, frame_type_counts)``. Counts only — frame *bodies* are
-        never recorded, so the audit trail can show what the backend did without
-        storing what it said.
-    """
     parts: list[str] = []
     counts: dict[str, int] = {}
     done = False
@@ -153,21 +103,7 @@ def collect_answer(frames: Iterator[SSEFrame]) -> tuple[str, dict[str, int]]:
     return "".join(parts), counts
 
 
-# ---------------------------------------------------------------------------
-# Mock adapter
-# ---------------------------------------------------------------------------
-
-
 class MockBackendAdapter:
-    """A deterministic offline backend.
-
-    It does not merely hand back the expected answer. It emits a realistic SSE
-    frame stream, chunked across ``answer_delta`` frames, wrapped in a
-    ``<think>`` span and with CRLF line endings — so the normalization stage is
-    genuinely exercised rather than reduced to a pass-through. A mock that gives
-    normalization nothing to do proves nothing about it.
-    """
-
     name = "mock"
     lane = CaptureLane.MOCK_BACKEND
 
@@ -179,7 +115,6 @@ class MockBackendAdapter:
         return "mock://kleos/api/v1/career/projects/chat"
 
     def _stream(self, answer: str, request: ScenarioRequest) -> Iterator[str]:
-        """Render an answer as SSE lines, the way the real endpoint would."""
         yield ": keepalive"
         yield ""
         yield 'data: {"type": "answer_start"}'
@@ -187,15 +122,10 @@ class MockBackendAdapter:
 
         body = answer
         if self.emit_reasoning:
-            # The real backend's thinking mode emits a reasoning span that the
-            # public formatter strips before tokenization. Normalization has to
-            # remove it here, or it becomes a training target.
             body = (
                 "<think>Weighing deadline against evidence strength for "
                 f"{len(request.variation_axes)} axes.</think>" + answer
             )
-        # CRLF on purpose: a real HTTP stream carries them and they must not
-        # reach a content hash.
         body = body.replace("\n", "\r\n")
 
         for start in range(0, len(body), self.chunk_size):
@@ -222,15 +152,6 @@ class MockBackendAdapter:
         frames = parse_sse_stream(iter(self._stream(request.expected_answer, request)))
         answer, counts = collect_answer(frames)
 
-        # Deterministic capture id: re-running a batch must not produce a new
-        # file for identical content, or staging fills with near-duplicates.
-        #
-        # The prompt itself is in the seed, and has to be. Keying on the axes
-        # alone collided for every perturbation that changes the *text* without
-        # changing an axis value — paraphrase, irrelevant_context and length all
-        # do — so the two members of any `count: 2` paraphrase group produced
-        # one capture_id, and the second silently overwrote the first on disk.
-        # A 1152-request batch landed 948 files while reporting 1152 captured.
         seed = canonical_hash(
             {
                 "batch": batch_id,
@@ -267,25 +188,10 @@ class MockBackendAdapter:
                 frame_type_counts=counts,
                 response_bytes=len(answer.encode("utf-8")),
             ),
-            # Frozen, not `now()`: a batch regenerated from the same scenario
-            # must be byte-identical, or reproducibility is a claim rather than
-            # a property.
             captured_at="1970-01-01T00:00:00+00:00",
         )
 
 
-# ---------------------------------------------------------------------------
-# Real backend adapters
-# ---------------------------------------------------------------------------
-
-
-#: Form fields the chat endpoint accepts, with every integration forced off.
-#:
-#: The real endpoint takes roughly forty `Form(...)` fields. Any integration
-#: left on pulls more of the operator's connected accounts — Drive, GitHub,
-#: Notion, Slack — into a capture that is already one person's private data, for
-#: no research value at all. Turning one on requires editing this dict, which is
-#: a diff a reviewer sees.
 CHAT_FORM_DEFAULTS: dict[str, Any] = {
     "thinking": "false",
     "model_mode": "small",
@@ -305,15 +211,6 @@ CHAT_FORM_DEFAULTS: dict[str, Any] = {
 
 
 class KleosChatAdapter:
-    """The real ``POST /api/v1/career/projects/chat`` endpoint.
-
-    Multipart form in, SSE stream out. Everything it returns is
-    ``lane=production_observation`` and can never be promoted — the backend
-    answers from the authenticated user's own stored projects and memories, so a
-    capture is that person's private data whatever the prompt said. It is seed
-    material for writing a new generalized scenario, and nothing else.
-    """
-
     name = "kleos_chat"
     lane = CaptureLane.PRODUCTION_OBSERVATION
 
@@ -358,7 +255,6 @@ class KleosChatAdapter:
         )
 
 
-#: JSON endpoints that return a whole view rather than a stream.
 JSON_ENDPOINTS: dict[str, str] = {
     "briefing": "/api/v1/mission/briefing",
     "notifications": "/api/v1/notifications",
@@ -367,14 +263,6 @@ JSON_ENDPOINTS: dict[str, str] = {
 
 
 class KleosJsonAdapter:
-    """The plain-JSON views: mission briefing, notifications, memory.
-
-    A different response discipline from the chat endpoint — a whole view, not a
-    stream — which is why the adapter boundary exists rather than one client with
-    branches. Same lane, same prohibition: these views *are* the user's stored
-    data, so a capture can never be promoted.
-    """
-
     name = "kleos_json"
     lane = CaptureLane.PRODUCTION_OBSERVATION
 
@@ -402,8 +290,6 @@ class KleosJsonAdapter:
                 details={"status": str(response.status), "bytes": str(len(response.text))},
             ) from exc
 
-        # Serialized deterministically so the same view produces the same bytes,
-        # and so a capture is diffable against a later one.
         answer = json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False)
 
         return RawCapture(
@@ -430,23 +316,16 @@ class KleosJsonAdapter:
         )
 
 
-#: Adapter registry. The real adapters register here once they exist.
 ADAPTERS: dict[str, type] = {
     "mock": MockBackendAdapter,
     "kleos_chat": KleosChatAdapter,
     "kleos_json": KleosJsonAdapter,
 }
 
-#: Adapters that require a transport, and therefore the `collect` extra.
 NEEDS_TRANSPORT: frozenset[str] = frozenset({"kleos_chat", "kleos_json"})
 
 
 def resolve_adapter(name: str, *, transport: Any = None) -> BackendAdapter:
-    """Instantiate an adapter by name.
-
-    The real adapters need a transport; the mock refuses one, so a caller cannot
-    accidentally point the offline lane at a network client.
-    """
     factory = ADAPTERS.get(name)
     if factory is None:
         raise CaptureError(

@@ -1,16 +1,3 @@
-#!/usr/bin/env python3
-"""Verify a sealed release by re-deriving everything from its bytes.
-
-    python scripts/verify_release.py --release releases/kleos-policy-v0.1.0 --strict
-
-Every count, distribution and hash is recomputed from the JSONL and compared
-against the manifest and the lock. This shares no computation with the writer:
-reusing it would only prove the writer is self-consistent, which is not the
-question.
-
-Exits 3 on any mismatch, 4 if the mismatch is a privacy one.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -26,9 +13,7 @@ from kleos_training_data.errors import EXIT_GATE_FAILED, EXIT_OK, EXIT_PRIVACY_V
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
-    )
+    parser = argparse.ArgumentParser()
     parser.add_argument("--release", type=Path, required=True, help="Sealed release directory.")
     parser.add_argument("--strict", action="store_true", help="Treat warnings as failures.")
     parser.add_argument("--json", type=Path, help="Write a machine-readable report here.")

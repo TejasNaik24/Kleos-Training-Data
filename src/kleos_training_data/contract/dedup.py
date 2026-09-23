@@ -1,25 +1,3 @@
-"""Duplicate and leakage detection, mirroring the public implementation.
-
-Ported from ``kleos_models.data.leakage``. Four kinds, in increasing looseness:
-
-``exact``
-    Identical conversation text.
-``normalized``
-    Identical after :func:`normalize_text` — which collapses digit runs, so
-    "Deadline: Mar 3" and "deadline mar 7" are the same scenario. That is
-    deliberate and worth restating: **changing only a number does not make a
-    scenario new.**
-``near``
-    Jaccard over character 5-grams above a threshold.
-``scenario_repeat``
-    Same ``scenario_family`` on both sides. Not a duplicate, but it is what
-    makes a train/test split meaningless if it straddles the boundary.
-
-The first two are fatal. Near-duplicates are reviewed rather than blindly
-deleted: two examples at 0.87 similarity are sometimes a redundant pair and
-sometimes a deliberate perturbation, and only a human can tell which.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
@@ -29,18 +7,12 @@ from typing import Any
 
 from kleos_training_data.hashing import jaccard, normalize_text, sha256_hex, shingles
 
-#: Matches the public repo's default. Changing it changes which pairs a release
-#: reports, so it is a research decision rather than a tuning knob.
 DEFAULT_NEAR_DUPLICATE_THRESHOLD: float = 0.85
 
-#: Shingle size for near-duplicate comparison. Character-level, so it survives
-#: word reordering better than token shingles would.
 SHINGLE_SIZE: int = 5
 
 
 class DuplicateKind(str, Enum):
-    """Why two examples are considered related."""
-
     EXACT = "exact_duplicate"
     NORMALIZED = "normalized_duplicate"
     NEAR = "near_duplicate"
@@ -48,8 +20,6 @@ class DuplicateKind(str, Enum):
     SCENARIO_REPEAT = "scenario_repeat"
 
 
-#: Kinds that block promotion outright. A near-duplicate is a judgement call; an
-#: exact duplicate is not.
 FATAL_KINDS: frozenset[DuplicateKind] = frozenset(
     {DuplicateKind.EXACT, DuplicateKind.NORMALIZED, DuplicateKind.ID_COLLISION}
 )
@@ -57,8 +27,6 @@ FATAL_KINDS: frozenset[DuplicateKind] = frozenset(
 
 @dataclass(frozen=True)
 class DuplicateFinding:
-    """One related pair."""
-
     kind: DuplicateKind
     candidate_id: str
     existing_id: str
@@ -81,8 +49,6 @@ class DuplicateFinding:
 
 @dataclass
 class CorpusEntry:
-    """One already-promoted example, indexed for comparison."""
-
     example_id: str
     text: str
     scenario_family: str | None = None
@@ -99,8 +65,6 @@ class CorpusEntry:
 
 @dataclass
 class CorpusIndex:
-    """Everything already promoted, prepared for duplicate lookup."""
-
     entries: list[CorpusEntry] = field(default_factory=list)
     _by_exact: dict[str, str] = field(default_factory=dict, init=False)
     _by_normalized: dict[str, str] = field(default_factory=dict, init=False)
@@ -116,7 +80,6 @@ class CorpusIndex:
         self._shingles[entry.example_id] = shingles(normalize_text(entry.text), SHINGLE_SIZE)
 
     def add(self, entry: CorpusEntry) -> None:
-        """Index one more example. Used as a promotion run proceeds."""
         self.entries.append(entry)
         self._register(entry)
 
@@ -134,12 +97,6 @@ class CorpusIndex:
         threshold: float = DEFAULT_NEAR_DUPLICATE_THRESHOLD,
         check_scenario_repeat: bool = False,
     ) -> list[DuplicateFinding]:
-        """Every relationship between ``candidate`` and the indexed corpus.
-
-        Returns at most one duplicate finding per existing example, taking the
-        strictest kind that applies — reporting an exact duplicate *and* a
-        near-duplicate for the same pair would double-count one problem.
-        """
         findings: list[DuplicateFinding] = []
 
         if candidate.example_id in self.ids:
@@ -214,12 +171,10 @@ class CorpusIndex:
 
 
 def build_index(entries: Iterable[CorpusEntry]) -> CorpusIndex:
-    """Index a collection of already-promoted examples."""
     return CorpusIndex(entries=list(entries))
 
 
 def conversation_text(payload: Mapping[str, Any], *, include_assistant: bool = True) -> str:
-    """Flat text view, matching ``TrainingExample.conversation_text``."""
     messages: list[Mapping[str, Any]] = payload.get("messages") or []
     return "\n".join(
         f"{m['role']}: {m['content']}"

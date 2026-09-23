@@ -1,21 +1,3 @@
-#!/usr/bin/env python3
-"""Validate the scenario catalog before anything is generated from it.
-
-Checks the things that are silent failures if left unchecked:
-
-* every file parses, and no two files claim the same family
-* every named policy and surrogate pool exists
-* every declared perturbation is **decision-preserving** — generated and
-  compared, not taken on trust
-* every perturbation actually perturbs, so an equivalence group cannot be
-  quietly full of duplicates
-* reserved holdout values are real, so an OOD split cannot come out empty
-* the catalog's coverage is reported, so "large but narrow" is visible
-
-    python scripts/validate_scenarios.py
-    python scripts/validate_scenarios.py --family notif.deadline_vs_evidence --strict
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -41,7 +23,6 @@ from kleos_training_data.scenarios.surrogates import SurrogatePool, load_pools
 
 
 def _check_scenario(scenario: Scenario, pools: dict[str, SurrogatePool]) -> list[str]:
-    """Return this scenario's problems, empty when it is sound."""
     problems: list[str] = []
 
     pool = pools.get(scenario.entities.pool)
@@ -58,8 +39,6 @@ def _check_scenario(scenario: Scenario, pools: dict[str, SurrogatePool]) -> list
             f"{pool.name!r} size {len(pool.values)}"
         )
 
-    # Reserved holdout pools must exist, or the OOD split silently has nothing
-    # to hold out and the generalization claim evaporates.
     for reserved in scenario.holdout.reserve_entity_pools:
         if reserved not in pools:
             problems.append(f"holdout.reserve_entity_pools names unknown pool {reserved!r}")
@@ -82,10 +61,6 @@ def _check_scenario(scenario: Scenario, pools: dict[str, SurrogatePool]) -> list
                 f"holdout.reserve_domains names {domain!r}, which this scenario never generates"
             )
 
-    # A family must not perturb the axis its release holds out on. If it does,
-    # a base example and its perturbed variant carry different values of that
-    # axis, so a holdout split puts them on opposite sides and the group is
-    # broken — which makes consistency testing on that group meaningless.
     format_varying = {"formatting", "schema"}
     declared_kinds = {g.kind for g in scenario.generation.equivalence_groups}
     if scenario.holdout.reserve_formats and (declared_kinds & format_varying):
@@ -100,8 +75,6 @@ def _check_scenario(scenario: Scenario, pools: dict[str, SurrogatePool]) -> list
         and "domain" in scenario.axes
         and len(scenario.axes["domain"]) > 1
     ):
-        # Domain is not varied by any perturbation kind, so this is safe — noted
-        # here so the asymmetry is deliberate rather than an oversight.
         pass
 
     if scenario.axis_space_size < scenario.generation.n_base:
@@ -110,8 +83,6 @@ def _check_scenario(scenario: Scenario, pools: dict[str, SurrogatePool]) -> list
             f"({scenario.axis_space_size}); points would repeat"
         )
 
-    # The real check: generate everything. Decision-preservation and
-    # non-duplication are enforced inside generate().
     try:
         candidates = generate(scenario, pool)
     except ScenarioError as exc:
@@ -127,12 +98,6 @@ def _check_scenario(scenario: Scenario, pools: dict[str, SurrogatePool]) -> list
     if len(set(ids)) != len(ids):
         problems.append(f"{len(ids) - len(set(ids))} generated candidate(s) are duplicates")
 
-    # `difficulty` is declared as a generation hint but *derived* for the
-    # shipped label, so a family can declare a level it never actually produces.
-    # That is not an error — the derived label is the truthful one — but an
-    # author who declared `hard` and produced none should see it, because it
-    # means the family cannot construct the situation it thought it was
-    # describing.
     if "difficulty" in scenario.axes:
         from kleos_training_data.scenarios.difficulty import derive_difficulty
 
@@ -145,8 +110,6 @@ def _check_scenario(scenario: Scenario, pools: dict[str, SurrogatePool]) -> list
                 f"scenarios/difficulty.py"
             )
 
-    # Consistency testing needs at least two members per group, or it silently
-    # reports nothing at all.
     if scenario.generation.equivalence_groups:
         group_sizes = Counter(c.group_id for c in candidates)
         singletons = [g for g, n in group_sizes.items() if n < 2]
@@ -160,12 +123,6 @@ def _check_scenario(scenario: Scenario, pools: dict[str, SurrogatePool]) -> list
 
 
 def _report_difficulty(scenarios: list[Scenario], pools: dict[str, SurrogatePool]) -> None:
-    """Show declared difficulty against what each family actually produces.
-
-    The shipped label is measured from the situation under the policy that
-    resolves it, so a declaration is a hint rather than a promise. Printing both
-    is what stops the hint quietly diverging from the data again.
-    """
     from kleos_training_data.scenarios.difficulty import derive_difficulty
 
     rows: list[tuple[str, str, str]] = []
@@ -200,7 +157,6 @@ def _report_difficulty(scenarios: list[Scenario], pools: dict[str, SurrogatePool
 
 
 def _coverage(scenarios: list[Scenario]) -> dict[str, object]:
-    """Catalog-level coverage. Size is not diversity, and this is the difference."""
     tasks = Counter(s.task for s in scenarios)
     domains: Counter[str] = Counter()
     perturbations: Counter[str] = Counter()
@@ -225,9 +181,7 @@ def _coverage(scenarios: list[Scenario]) -> dict[str, object]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
-    )
+    parser = argparse.ArgumentParser()
     parser.add_argument("--scenarios", type=Path, help="Catalog root (default: scenarios/).")
     parser.add_argument("--family", action="append", default=None, help="Limit to a family.")
     parser.add_argument(

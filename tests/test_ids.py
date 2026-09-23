@@ -1,16 +1,3 @@
-"""Example ids are content-derived, stable, and position-independent.
-
-The properties asserted here are what make a dataset diffable across versions
-and a leakage report readable. Each one closes a specific failure:
-
-* Position-independence — otherwise inserting an example renumbers everything
-  after it, and two releases cannot be compared.
-* Provenance-independence — otherwise re-reviewing an example changes its id,
-  and its history is lost.
-* Content-sensitivity — otherwise an example edited after approval keeps the
-  signature that approved its old text.
-"""
-
 from __future__ import annotations
 
 import random
@@ -37,7 +24,6 @@ class TestIdShape:
 
     @pytest.mark.parametrize("task", SUPPORTED_TASKS)
     def test_the_task_is_readable_from_the_id(self, task: str) -> None:
-        """A leakage report row should be triageable without a lookup."""
         assert example_id(base(task=task)).startswith(f"kx-{TASK_CODES[task]}-")
 
     def test_a_minted_id_is_accepted_by_the_schema(self) -> None:
@@ -54,7 +40,6 @@ class TestContentDerivation:
         assert example_id(base()) == example_id(base())
 
     def test_a_one_character_change_yields_a_different_id(self) -> None:
-        """This is what makes a signed review non-transferable (gate G08)."""
         original = base()
         edited = base(
             messages=[
@@ -77,7 +62,6 @@ class TestContentDerivation:
         ],
     )
     def test_provenance_does_not_change_identity(self, metadata: dict) -> None:
-        """Re-reviewing or re-noting an example must not fork it."""
         assert example_id(base()) == example_id(base(metadata=metadata))
 
     def test_the_supplied_id_does_not_influence_the_derived_one(self) -> None:
@@ -86,11 +70,9 @@ class TestContentDerivation:
         assert a == b
 
     def test_the_domain_mirror_does_not_influence_identity(self) -> None:
-        """`domain` is derivable from the axes, so counting it would double-count."""
         assert example_id(base()) == example_id(base(domain="career"))
 
     def test_variation_axes_are_part_of_identity(self) -> None:
-        """Two examples with identical text but different axes are different examples."""
         a = base(variation_axes={"domain": "career", "urgency": "high"})
         b = base(variation_axes={"domain": "career", "urgency": "low"})
         assert example_id(a) != example_id(b)
@@ -100,8 +82,6 @@ class TestContentDerivation:
 
 
 class TestNormalization:
-    """Presentation differences must not fork an example."""
-
     def test_line_endings_are_normalized(self) -> None:
         crlf = base(
             messages=[
@@ -135,15 +115,8 @@ class TestNormalization:
         assert example_id(a) == example_id(b)
 
     def test_unicode_composition_is_normalized(self) -> None:
-        """An accented character composed two ways is the same text.
-
-        Written as explicit escapes rather than literals: two source literals
-        that look identical in an editor usually *are* identical, and the test
-        would pass while proving nothing. macOS filesystems hand back NFD where
-        most other sources produce NFC, so this difference arrives on its own.
-        """
-        nfc = "caf\u00e9"  # e-acute as one code point
-        nfd = "cafe\u0301"  # "e" + COMBINING ACUTE ACCENT
+        nfc = "caf\u00e9"
+        nfd = "cafe\u0301"
         assert nfc != nfd, "the two forms must genuinely differ or this proves nothing"
 
         composed = base(
@@ -188,7 +161,6 @@ class TestCanonicalization:
 
 class TestPositionIndependence:
     def test_shuffling_the_corpus_leaves_the_id_set_identical(self) -> None:
-        """The property that position-based ids cannot have."""
         payloads = [
             base(
                 messages=[
@@ -239,7 +211,6 @@ class TestCollisionLedger:
         assert ledger.assignments == {content_hash(base()): minted}
 
     def test_assignment_is_independent_of_insertion_order(self) -> None:
-        """A fresh checkout must re-derive the same ids from the same corpus."""
         payloads = [
             base(
                 messages=[
@@ -261,7 +232,6 @@ class TestCollisionLedger:
         assert forward.assignments == reverse.assignments
 
     def test_a_collision_escalates_to_a_longer_digest(self) -> None:
-        """Two different contents must never share an id, however unlikely that is."""
         ledger = CollisionLedger()
         first = base()
         second = base(
@@ -272,7 +242,6 @@ class TestCollisionLedger:
         )
 
         taken = ledger.mint(first)
-        # Force the short form of `second` to be already claimed.
         ledger.assignments["deliberate-fake-hash"] = example_id(second)
 
         minted = ledger.mint(second)
@@ -286,7 +255,6 @@ class TestCollisionLedger:
         assert ledger.verify(payload, ledger.mint(payload))
 
     def test_verify_rejects_an_id_for_different_content(self) -> None:
-        """Gate G03: catches content edited after its id was minted."""
         ledger = CollisionLedger()
         minted = ledger.mint(base())
         edited = base(
@@ -309,7 +277,6 @@ class TestCollisionLedger:
         assert CollisionLedger.load(tmp_path / "absent.json").assignments == {}
 
     def test_the_ledger_stores_no_content(self, tmp_path) -> None:
-        """It is committed, so it must carry hashes and ids and nothing else."""
         ledger = CollisionLedger(path=tmp_path / "ledger.json")
         ledger.mint(
             base(

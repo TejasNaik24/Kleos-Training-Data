@@ -1,31 +1,6 @@
-"""The compatibility handshake with the pinned public repository.
-
-This is what makes the contract mirror defensible rather than merely asserted.
-The mirror exists so this repository builds and tests with kleos-models absent;
-these checks exist so "we ported it faithfully" is a property somebody verified
-rather than a claim in a docstring.
-
-**A skip is a degraded run, not a pass.** ``kleos_models_available()`` returning
-``False`` is the normal local state and the correct one — the offline pipeline
-must be workable without the public repo checked out. But CI installs the pinned
-extra and runs with ``--strict``, where absence is a failure. A compatibility
-check that silently passes when it could not run is worse than no check, because
-it produces a green build that means nothing.
-
-What is compared, in increasing cost:
-
-1. **Vocabulary** — every mirrored constant, element-wise *and* order-wise. The
-   early-warning detector: a newly registered task fails here long before any
-   byte-level test notices, because the byte tests only exercise values already
-   in use.
-2. **Behaviour** — writer bytes, split assignments, ``normalize_text``, and
-   accept/reject decisions over a shared corpus.
-3. **Artifact** — a real release round-tripped through the public loader and
-   validator.
-"""
-
 from __future__ import annotations
 
+import importlib
 import os
 import sys
 from dataclasses import dataclass, field
@@ -40,17 +15,10 @@ from kleos_training_data.contract.pin import (
 )
 from kleos_training_data.errors import CompatibilityDriftError
 
-#: Environment variable pointing at a local checkout of the public repo.
 ENV_MODELS_PATH = "KLEOS_MODELS_PATH"
 
 
 def _add_local_checkout_to_path() -> Path | None:
-    """Make a local kleos-models checkout importable, if one is configured.
-
-    Development convenience only. CI installs the SHA-pinned package, so what it
-    verifies against is exactly the commit in :mod:`.pin` rather than whatever a
-    working copy happens to contain.
-    """
     configured = os.environ.get(ENV_MODELS_PATH, "").strip()
     if not configured:
         return None
@@ -63,17 +31,15 @@ def _add_local_checkout_to_path() -> Path | None:
 
 
 def kleos_models_available() -> bool:
-    """Whether the public package can be imported."""
     _add_local_checkout_to_path()
     try:
-        import kleos_models  # noqa: F401
+        importlib.import_module("kleos_models")
     except ImportError:
         return False
     return True
 
 
 def public_version() -> str | None:
-    """The installed public package's version, if any."""
     if not kleos_models_available():
         return None
     import kleos_models
@@ -83,8 +49,6 @@ def public_version() -> str | None:
 
 @dataclass
 class CompatCheck:
-    """One comparison and its outcome."""
-
     name: str
     ok: bool
     detail: str = ""
@@ -95,8 +59,6 @@ class CompatCheck:
 
 @dataclass
 class CompatReport:
-    """The full handshake."""
-
     available: bool
     checks: list[CompatCheck] = field(default_factory=list)
     public_version: str | None = None
@@ -136,12 +98,6 @@ class CompatReport:
 
 
 def compare_vocabularies() -> list[CompatCheck]:
-    """Compare every mirrored constant, element-wise and order-wise.
-
-    Order matters even where it looks cosmetic: it decides how ``holdout_values``
-    sorts and how a coverage report enumerates cells, so a reordered tuple
-    changes an artifact without changing a single value.
-    """
     from kleos_models import constants as public
 
     checks: list[CompatCheck] = []
@@ -162,7 +118,6 @@ def compare_vocabularies() -> list[CompatCheck]:
 
 
 def compare_behaviour() -> list[CompatCheck]:
-    """Compare the ported functions against the public originals."""
     import random
 
     from kleos_models.data.leakage import normalize_text as public_normalize
@@ -214,7 +169,6 @@ def compare_behaviour() -> list[CompatCheck]:
 
 
 def compare_writer() -> list[CompatCheck]:
-    """Compare our JSONL bytes against the public writer's."""
     import tempfile
 
     from kleos_models.data.loaders import write_jsonl as public_write
@@ -250,7 +204,6 @@ def compare_writer() -> list[CompatCheck]:
 
 
 def verify_release_against_public(directory: Path | str) -> list[CompatCheck]:
-    """Round-trip a real release through the public loader and validator."""
     from kleos_models.config import DatasetConfig
     from kleos_models.data.loaders import load_dataset_bundle
     from kleos_models.data.validation import validate_examples
@@ -290,11 +243,6 @@ def verify_release_against_public(directory: Path | str) -> list[CompatCheck]:
 
 
 def run_handshake(release: Path | str | None = None) -> CompatReport:
-    """Run every available comparison.
-
-    Returns a report rather than raising, so a caller can decide whether an
-    unavailable public package is acceptable. ``--strict`` says it is not.
-    """
     available = kleos_models_available()
     report = CompatReport(available=available, public_version=public_version())
 
@@ -323,12 +271,6 @@ def run_handshake(release: Path | str | None = None) -> CompatReport:
 
 
 def assert_compatible(release: Path | str | None = None) -> CompatReport:
-    """Run the handshake and raise on drift.
-
-    Raises:
-        CompatibilityDriftError: If the public package is absent or any
-            comparison disagrees.
-    """
     report = run_handshake(release)
     if not report.available:
         raise CompatibilityDriftError(

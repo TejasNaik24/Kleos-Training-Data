@@ -1,5 +1,3 @@
-"""Load and validate the scenario catalog."""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -10,15 +8,12 @@ from pydantic import ValidationError
 from kleos_training_data.errors import ScenarioError
 from kleos_training_data.scenarios.models import Scenario
 
-#: Repository-relative home of the catalog.
 DEFAULT_CATALOG_DIR = Path(__file__).resolve().parents[3] / "scenarios"
 
-#: Directories under the catalog that hold shared assets rather than scenarios.
 _NON_SCENARIO_DIRS = frozenset({"_shared"})
 
 
 def load_scenario(path: Path | str) -> Scenario:
-    """Load one scenario file."""
     target = Path(path)
     try:
         payload = yaml.safe_load(target.read_text(encoding="utf-8"))
@@ -54,8 +49,6 @@ def load_scenario(path: Path | str) -> Scenario:
             ],
         ) from exc
 
-    # The filename is not the identity — `family` is — but a mismatch is almost
-    # always a copy-paste that will confuse whoever reads the catalog next.
     expected_stem = scenario.family.split(".")[-1]
     if target.stem != expected_stem:
         scenario = scenario.model_copy(
@@ -70,17 +63,6 @@ def load_scenario(path: Path | str) -> Scenario:
 def load_catalog(
     directory: Path | str | None = None, *, families: list[str] | None = None
 ) -> list[Scenario]:
-    """Load every scenario under ``directory``.
-
-    Args:
-        directory: Catalog root. Defaults to ``scenarios/``.
-        families: When given, keep only these family names.
-
-    Raises:
-        ScenarioError: If any file fails to load, or two files claim the same
-            family — duplicate families would silently merge two different
-            research claims into one scenario_family group.
-    """
     root = Path(directory) if directory is not None else DEFAULT_CATALOG_DIR
     if not root.is_dir():
         raise ScenarioError(

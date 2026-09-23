@@ -1,5 +1,3 @@
-"""Drive a scenario catalog through an adapter into the staging zone."""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -19,7 +17,6 @@ logger = get_logger(__name__)
 
 
 def scenario_ref(scenario: Scenario, point_index: int) -> ScenarioRef:
-    """The provenance stamp carried by every record from this scenario."""
     return ScenarioRef(
         family=scenario.family,
         task=scenario.task,
@@ -32,7 +29,6 @@ def scenario_ref(scenario: Scenario, point_index: int) -> ScenarioRef:
 
 
 def to_request(scenario: Scenario, candidate: Candidate) -> ScenarioRequest:
-    """Turn a generated candidate into something an adapter can send."""
     system, user, assistant = (m["content"] for m in candidate.messages)
     return ScenarioRequest(
         scenario=scenario_ref(scenario, candidate.situation.point_index),
@@ -42,17 +38,12 @@ def to_request(scenario: Scenario, candidate: Candidate) -> ScenarioRequest:
         group_id=candidate.group_id,
         perturbation_of=candidate.perturbation_of,
         perturbation_kind=candidate.perturbation_kind,
-        # The mock lane needs the policy-derived target. The real lane will not
-        # supply one — there, the backend's answer is what is captured, and it
-        # becomes seed material rather than a training target.
         expected_answer=assistant,
     )
 
 
 @dataclass
 class BatchResult:
-    """What one capture run produced."""
-
     batch_id: str
     lane: CaptureLane
     adapter: str
@@ -74,12 +65,6 @@ def run_batch(
     batch_id: str,
     limit: int | None = None,
 ) -> BatchResult:
-    """Capture every scenario point through ``adapter`` into ``staging/raw``.
-
-    Logging here is counts and timings only — never a prompt, never an answer.
-    A log line is the easiest place for private content to escape, because logs
-    get pasted into issues.
-    """
     destination = workspace.raw_batch(batch_id)
     written: list[Path] = []
     failures: list[tuple[str, str]] = []
@@ -108,12 +93,6 @@ def run_batch(
                 )
                 continue
 
-            # A capture_id already used in this batch means the adapter derived
-            # the same id for two different requests, and writing would silently
-            # replace the earlier file. The count would still say both were
-            # captured — which is how 204 lost captures went unnoticed until the
-            # normalized count failed to match. A collision is a failure, not a
-            # write.
             if capture.capture_id in seen_capture_ids:
                 failures.append(
                     (
@@ -169,7 +148,6 @@ def run_batch(
 
 
 def load_batch(workspace: Workspace, batch_id: str) -> list[RawCapture]:
-    """Read every capture in a batch, verifying record integrity."""
     from kleos_training_data.staging.store import iter_records
 
     return list(iter_records(workspace.raw_batch(batch_id), RawCapture))

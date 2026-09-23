@@ -1,10 +1,3 @@
-"""The compatibility handshake.
-
-The property that matters most is negative: **a skip must not read as a pass.**
-A check that silently succeeds when it could not run produces a green build that
-means nothing, and that is worse than having no check at all.
-"""
-
 from __future__ import annotations
 
 import importlib.util
@@ -30,7 +23,6 @@ from kleos_training_data.errors import CompatibilityDriftError
 
 
 def _load_cli():
-    """Import the compat CLI by path — scripts/ is not a package."""
     path = REPO_ROOT / "scripts" / "check_contract_compat.py"
     spec = importlib.util.spec_from_file_location("_compat_cli", path)
     assert spec and spec.loader
@@ -42,9 +34,6 @@ def _load_cli():
 
 class TestPin:
     def test_the_pin_names_a_commit_not_a_branch(self) -> None:
-        """A moving reference would let the public contract change underneath a
-        release without any test failing — the one failure mode this exists to
-        prevent."""
         assert len(CONTRACT_SOURCE_COMMIT) == 40
         assert all(c in "0123456789abcdef" for c in CONTRACT_SOURCE_COMMIT)
 
@@ -55,8 +44,6 @@ class TestPin:
         assert not missing, f"pin.py claims to mirror {missing}, which do not exist"
 
     def test_the_deltas_are_documented(self) -> None:
-        """A strictness difference nobody wrote down becomes an unexplained
-        disagreement between two repositories."""
         assert DELIBERATE_DELTAS
         for name, why in DELIBERATE_DELTAS.items():
             assert len(why) > 40, f"{name} needs a real explanation"
@@ -67,14 +54,12 @@ class TestPin:
             assert len(why) > 40, f"{name} needs a real explanation"
 
     def test_mirrored_behaviours_name_their_source(self) -> None:
-        """So a reviewer can find the original without searching."""
         for name, source in MIRRORED_BEHAVIOURS.items():
             assert "kleos_models" in source, f"{name} does not name its public source"
 
 
 class TestReportSemantics:
     def test_an_unavailable_package_is_not_ok(self) -> None:
-        """The core property. Absence is not agreement."""
         report = CompatReport(available=False)
         assert not report.ok
 
@@ -106,8 +91,6 @@ class TestReportSemantics:
 
 
 class TestCLIExitCodes:
-    """A skip and a pass must be distinguishable from the exit code alone."""
-
     def test_strict_fails_when_the_package_is_absent(self, monkeypatch, capsys) -> None:
         cli = _load_cli()
         monkeypatch.setattr(
@@ -116,8 +99,6 @@ class TestCLIExitCodes:
         assert cli.main(["--strict"]) == 3
 
     def test_without_strict_an_absent_package_skips(self, monkeypatch, capsys) -> None:
-        """The normal local state: the offline pipeline does not need the public
-        repo checked out."""
         cli = _load_cli()
         monkeypatch.setattr(
             cli, "run_handshake", lambda release=None: CompatReport(available=False)
@@ -144,7 +125,6 @@ class TestCLIExitCodes:
         assert "COMPATIBLE" in capsys.readouterr().out
 
     def test_the_verdict_is_never_ambiguous(self, monkeypatch, capsys) -> None:
-        """One word, always. It never silently continues."""
         cli = _load_cli()
         for report, expected in (
             (CompatReport(available=True), "COMPATIBLE"),
@@ -163,7 +143,6 @@ class TestHandshakeAgainstThePublicRepo:
         assert report.ok, "\n".join(c.render() for c in report.failures)
 
     def test_every_mirrored_constant_is_checked(self) -> None:
-        """A constant listed in the pin but never compared is a false assurance."""
         checked = {c.name for c in run_handshake().checks}
         assert set(MIRRORED_CONSTANTS) <= checked
 
@@ -191,7 +170,6 @@ class TestHandshakeAgainstThePublicRepo:
             compat.assert_compatible()
 
     def test_a_real_release_round_trips_through_the_public_loader(self, tmp_path) -> None:
-        """The end the whole arrangement serves."""
         from tests.test_datasets import corpus
 
         from kleos_training_data.contract.splitting import SplitConfig, split_examples
@@ -227,7 +205,6 @@ class TestHandshakeAgainstThePublicRepo:
 
 class TestEnvironment:
     def test_availability_is_a_boolean_not_an_exception(self) -> None:
-        """Callers branch on this; it must never raise."""
         assert isinstance(kleos_models_available(), bool)
 
     def test_a_bogus_local_checkout_is_ignored(self, monkeypatch, tmp_path) -> None:
@@ -239,7 +216,6 @@ class TestEnvironment:
 
 class TestSliceTarget:
     def test_the_makefile_defines_the_slice(self) -> None:
-        """The checkpoint is a command somebody can run, not a description."""
         makefile = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")
         assert "\nslice:" in makefile
         assert "slice-clean:" in makefile
@@ -263,7 +239,6 @@ class TestSliceTarget:
             assert stage in slice_body, f"the slice does not run {stage}"
 
     def test_the_slice_uses_the_mock_adapter(self) -> None:
-        """It must be provable offline, with no credentials and no private data."""
         makefile = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")
         slice_body = makefile.split("\nslice:")[1].split("\n.PHONY")[0]
         assert "--adapter mock" in slice_body
@@ -276,13 +251,11 @@ class TestCIConfiguration:
         assert "secrets." not in workflow
 
     def test_the_privacy_scan_runs_first(self) -> None:
-        """A leaked secret should fail the build in seconds, not after an install."""
         workflow = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
         jobs = workflow.split("\njobs:")[1]
         assert jobs.index("privacy:") < jobs.index("lint:")
 
     def test_the_compat_job_is_not_allowed_to_fail(self) -> None:
-        """A SKIPPED differential suite is a degraded run, not a passing one."""
         workflow = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
         assert "continue-on-error" not in workflow
 

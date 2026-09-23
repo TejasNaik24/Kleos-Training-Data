@@ -1,28 +1,3 @@
-"""Group-aware splitting, ported line-for-line from the public implementation.
-
-Ported from ``kleos_models.data.splitting``. This is the single highest-value
-differential test target in the repository, because a plausible-but-different
-splitter produces a *valid-looking* split that disagrees with the public repo's
-about the same data — and nothing crashes.
-
-Three internals are easy to lose in a "cleaner" rewrite and each one changes
-every assignment:
-
-* Determinism comes from **stable hashing**, not from shuffling. An example's
-  split depends only on its group key and the seed, so adding examples never
-  reshuffles the existing ones. That is what makes two dataset versions
-  comparable at all.
-* ``_split_holdout`` renormalizes the inner train/validation fractions by
-  ``remainder_fraction`` after carving out the held-out values.
-* ``_split_holdout`` then re-routes any group that stable-hashes into "test"
-  back into "train", because the inner split has ``test_fraction=0`` but the
-  hash can still round into that bucket.
-
-Validation is carved from the *seen*-attribute remainder while test holds the
-unseen values. That asymmetry is deliberate: early stopping on OOD data would
-leak the very thing the OOD split exists to measure.
-"""
-
 from __future__ import annotations
 
 import random
@@ -41,14 +16,6 @@ logger = get_logger(__name__)
 
 @dataclass
 class SplitConfig:
-    """How to partition examples.
-
-    Fractions default to 0.8/0.1/0.1, matching the public ``SplitConfig`` model.
-    Note the public *CLI* defaults to 0.7/0.15/0.15 instead — the two disagree,
-    so this repository always states fractions explicitly and records them in the
-    manifest rather than relying on either default.
-    """
-
     strategy: str = "random"
     seed: int = 42
     train_fraction: float = 0.8
@@ -60,8 +27,6 @@ class SplitConfig:
 
 @dataclass
 class SplitResult:
-    """The outcome of a split, with enough detail to reproduce and audit it."""
-
     train: list[TrainingExample] = field(default_factory=list)
     validation: list[TrainingExample] = field(default_factory=list)
     test: list[TrainingExample] = field(default_factory=list)
@@ -99,7 +64,6 @@ class SplitResult:
 
 
 def _assign_by_fraction(keys: Sequence[str], config: SplitConfig) -> dict[str, str]:
-    """Map each key to a split name using stable hashing."""
     assignment: dict[str, str] = {}
     train_cut = config.train_fraction
     val_cut = train_cut + config.validation_fraction
@@ -117,7 +81,6 @@ def _assign_by_fraction(keys: Sequence[str], config: SplitConfig) -> dict[str, s
 def _group_examples(
     examples: Sequence[TrainingExample], group_key: str | None
 ) -> dict[str, list[TrainingExample]]:
-    """Bucket examples by their resolved group key."""
     groups: dict[str, list[TrainingExample]] = defaultdict(list)
     for example in examples:
         groups[example.group_key(group_key)].append(example)
@@ -125,7 +88,6 @@ def _group_examples(
 
 
 def _holdout_attribute(example: TrainingExample, attribute: str) -> str:
-    """Read the attribute a ``*_holdout`` strategy partitions on."""
     if attribute == "domain":
         return example.variation_axes.domain
     if attribute == "entities":
@@ -137,7 +99,6 @@ def _holdout_attribute(example: TrainingExample, attribute: str) -> str:
 
 
 def _split_random(examples: Sequence[TrainingExample], config: SplitConfig) -> SplitResult:
-    """Shuffle and slice. Development only."""
     ordered = sorted(examples, key=lambda e: e.id)
     rng = random.Random(config.seed)
     rng.shuffle(ordered)
@@ -163,7 +124,6 @@ def _split_random(examples: Sequence[TrainingExample], config: SplitConfig) -> S
 def _split_grouped(
     examples: Sequence[TrainingExample], config: SplitConfig, *, strategy: str
 ) -> SplitResult:
-    """Assign whole groups to splits so related examples never straddle."""
     key = config.group_key
     if strategy == "scenario_family_holdout" and key is None:
         key = "scenario_family"
@@ -197,7 +157,6 @@ def _split_holdout(
     attribute: str,
     strategy: str,
 ) -> SplitResult:
-    """Hold out whole attribute values for the test split."""
     by_value: dict[str, list[TrainingExample]] = defaultdict(list)
     for example in examples:
         by_value[_holdout_attribute(example, attribute)].append(example)
@@ -227,8 +186,6 @@ def _split_holdout(
                 ],
             )
     else:
-        # Choose deterministically: take values in stable-hash order until the
-        # test split is at least the configured fraction.
         ranked = sorted(values, key=lambda v: stable_rank(v, config.seed))
         target = max(1, int(len(examples) * config.test_fraction))
         holdout = []
@@ -251,9 +208,6 @@ def _split_holdout(
     for value, members in sorted(by_value.items()):
         (test if value in holdout else remaining).extend(members)
 
-    # Split the remainder into train/validation, keeping groups intact. The
-    # inner fractions are renormalized by the remainder, which is easy to lose
-    # and changes every assignment.
     remainder_fraction = config.train_fraction + config.validation_fraction
     inner = SplitConfig(
         strategy="group",
@@ -275,7 +229,6 @@ def _split_holdout(
     )
     for group_name, members in sorted(groups.items()):
         target_split = assignment[group_name]
-        # test_fraction is 0 here, but stable hashing can still round into it.
         if target_split == "test":
             target_split = "train"
         result.split(target_split).extend(sorted(members, key=lambda e: e.id))
@@ -287,7 +240,6 @@ def _split_holdout(
     return result
 
 
-#: Strategy name -> implementation.
 _STRATEGIES = {
     "random": lambda ex, cfg: _split_random(ex, cfg),
     "group": lambda ex, cfg: _split_grouped(ex, cfg, strategy="group"),
@@ -309,7 +261,6 @@ _STRATEGIES = {
 def split_examples(
     examples: Sequence[TrainingExample], config: SplitConfig, *, verify: bool = True
 ) -> SplitResult:
-    """Partition examples according to the configured strategy."""
     if not examples:
         raise ContractViolationError(
             "Cannot split an empty dataset.",
@@ -339,11 +290,6 @@ def split_examples(
 
 
 def verify_split(result: SplitResult, *, expected_total: int | None = None) -> None:
-    """Assert a split is well-formed.
-
-    Raises:
-        ContractViolationError: on any overlap, loss, or straddled group.
-    """
     ids = {name: {e.id for e in result.split(name)} for name in ("train", "validation", "test")}
 
     for left, right in (("train", "validation"), ("train", "test"), ("validation", "test")):

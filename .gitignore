@@ -1,31 +1,3 @@
-# ---------------------------------------------------------------------------
-# KLEOS Training Data .gitignore
-#
-# This repository is PRIVATE, and private git is not a secure data vault. These
-# rules are a safety net, not a substitute for judgement. Before committing:
-#
-#     python scripts/check_no_private_data.py .
-#
-# See SECURITY.md, PRIVACY.md and DATA_GOVERNANCE.md.
-#
-# NOTE ON COMMENTS: git does not support trailing comments in .gitignore.
-# "!data/fixtures/  # note" is a literal pattern that matches nothing, which
-# silently un-ignores nothing at all. Every comment here is on its own line.
-# ---------------------------------------------------------------------------
-
-# --- The three zones are ALL deny-by-default --------------------------------
-#
-# staging/ holds unverified captures and partially sanitized candidates.
-# vault/   holds the entity vault and surrogate maps — the re-identification keys.
-# releases/ holds finished datasets, which are the product and are shipped by
-#          path, not by git (spec section 4.1).
-#
-# `<dir>/*` rather than `<dir>/`: git cannot re-include a file whose parent
-# directory is excluded, so "staging/" followed by "!staging/.gitkeep" would
-# silently drop the .gitkeep and the directory would vanish from the repo.
-#
-# Only the top-level .gitkeep is tracked. The subdirectories are runtime state
-# created by `python scripts/init_workspace.py`, not repository content.
 staging/*
 !staging/.gitkeep
 vault/*
@@ -35,31 +7,16 @@ releases/*
 reports/*
 !reports/.gitkeep
 
-# --- data/ is DENY-BY-DEFAULT -----------------------------------------------
-#
-# An allowlist on purpose. A blocklist ("ignore *.jsonl") only blocks the
-# filenames someone thought of in advance — drop a real export in as
-# data/my_export.json and it sails straight into a commit.
 data/*
 !data/README.md
-# Fictional surrogate name pools. Synthetic, committed on purpose.
 !data/surrogates/
-# Tiny valid/invalid corpora for contract and differential tests.
 !data/fixtures/
-# The id collision ledger. Contains hashes and assigned ids, no content.
 !data/id_ledger.json
 
-# --- Split filenames at the repository root ---------------------------------
-#
-# releases/ is already ignored wholesale, so this only catches a dataset
-# copied or downloaded to the wrong place. Deliberately root-anchored: the
-# public repo's global `**/train.jsonl` rule would erase this repository's
-# entire product.
 /train.jsonl
 /validation.jsonl
 /test.jsonl
 
-# --- Secrets ----------------------------------------------------------------
 .env
 .env.*
 !.env.example
@@ -71,7 +28,6 @@ service-account*.json
 .hf_token
 .huggingface/
 
-# --- Python -----------------------------------------------------------------
 __pycache__/
 *.py[cod]
 *$py.class
@@ -86,7 +42,6 @@ venv/
 env/
 .python-version
 
-# --- Tooling ----------------------------------------------------------------
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
@@ -96,7 +51,6 @@ htmlcov/
 .tox/
 .nox/
 
-# --- Editors / OS -----------------------------------------------------------
 .vscode/
 .idea/
 .DS_Store
@@ -104,6 +58,5 @@ Thumbs.db
 *.swp
 *~
 
-# --- Local agent notes ------------------------------------------------------
 claude.md
 CLAUDE.md

@@ -1,24 +1,3 @@
-#!/usr/bin/env python3
-"""Record a human decision about a candidate.
-
-    python scripts/record_decision.py --candidate kx-npr-abc --decision approve \\
-        --gate no_private_data=PASS --gate policy_not_facts=PASS \\
-        --gate no_unsupported_claims=PASS --gate schema_and_contract_valid=PASS
-
-The decision is signed against the exact content hash it was made about. Edit the
-candidate afterwards and the signature stops matching, so an approval never
-carries over to text nobody read.
-
-You may override a score with a justification. You may **not** approve over a
-failing `no_private_data` or `policy_not_facts` gate — the record cannot be
-constructed. Fix the content instead, which changes its id and requires a fresh
-review.
-
-``--adopt-machine-gates`` starts from the machine reviewer's gates rather than
-typing all four. It is a convenience for the common case, not a way to skip
-reading: the gates it adopts are printed before the decision is written.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -50,9 +29,7 @@ def _parse_pairs(values: list[str], *, what: str) -> dict[str, str]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
-    )
+    parser = argparse.ArgumentParser()
     parser.add_argument("--candidate", required=True, help="Candidate id.")
     parser.add_argument("--decision", required=True, choices=["approve", "reject", "revise"])
     parser.add_argument(
@@ -95,7 +72,6 @@ def main(argv: list[str] | None = None) -> int:
     workspace = Workspace.from_env(args.workspace)
     workspace.assert_initialized()
 
-    # Find the sanitized candidate so the decision binds to its exact hash.
     candidate = None
     search_roots = (
         [workspace.sanitized_batch(args.batch)]
@@ -148,8 +124,6 @@ def main(argv: list[str] | None = None) -> int:
     scores = {name: int(value) for name, value in _parse_pairs(args.score, what="--score").items()}
     reasons = [RejectionReason(code) for code in args.reason]
 
-    # The model invariants are the point of this script, so their messages have
-    # to reach the operator as guidance rather than as "this looks like a bug".
     try:
         decision = HumanDecision(
             candidate_id=args.candidate,

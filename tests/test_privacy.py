@@ -1,18 +1,3 @@
-"""Privacy: detection, redaction, surrogates and private-fact assessment.
-
-This module is listed in the scanner's ``SELF_EXEMPT`` set: the fabricated
-credentials below have to look real enough to match the rules they test. Every
-one is invented and none was ever valid anywhere.
-
-Two families of property are asserted, and both matter equally:
-
-* **Signal.** Every rule fires on its positive fixture, and a detection never
-  carries the value it matched.
-* **Noise.** The rules do *not* fire on the synthetic corpus this repository
-  generates. A reviewer taught to click through warnings is worse than no
-  warnings, so false positives are treated as failures rather than as cosmetics.
-"""
-
 from __future__ import annotations
 
 import json
@@ -92,17 +77,12 @@ class TestSecretDetection:
         assert result.status == STATUS_BLOCKED
 
     def test_a_secret_is_never_redacted(self) -> None:
-        """Replacing a credential would produce a clean-looking candidate and
-        hide that the capture path is compromised."""
         original = payload("token ghp_" + "a" * 36)
         result = sanitize(original, scenario_family="f")
         assert result.replacements == 0
         assert result.payload == original
 
     def test_the_library_rules_cover_the_scanner_rules(self) -> None:
-        """A library scanner looser than the pre-commit scanner is how a secret
-        reaches a release. The duplication is necessary — the scanner imports
-        nothing — so the relationship is asserted instead."""
         import importlib.util
         import sys
         from pathlib import Path
@@ -152,8 +132,6 @@ class TestPIIDetection:
         assert result.replacements >= 1
 
     def test_every_pii_rule_has_a_slot(self) -> None:
-        """A redact-severity rule without a slot would be detected and then left
-        in place — the worst outcome, because it looks handled."""
         for rule in PII_RULES:
             assert rule.slot, f"{rule.rule_id} is redact-severity but has no slot"
 
@@ -174,8 +152,6 @@ class TestAllowlists:
 
 
 class TestDetectionsCarryNoValue:
-    """The invariant: a Detection describes a problem, never relocates it."""
-
     @pytest.mark.parametrize(
         "secret",
         [
@@ -192,7 +168,6 @@ class TestDetectionsCarryNoValue:
         assert secret not in serialized
 
     def test_no_long_substring_of_the_match_survives(self) -> None:
-        """A prefix long enough to be useful is as bad as the whole thing."""
         secret = "ghp_" + "cdefghij" * 5
         detections = scan_text(f"token {secret}", field_path="t")
         serialized = json.dumps([d.to_dict() for d in detections])
@@ -201,8 +176,6 @@ class TestDetectionsCarryNoValue:
                 assert secret[start : start + size] not in serialized
 
     def test_an_excerpt_masks_its_neighbours(self) -> None:
-        """The bug this closes: each detection masked only its own span, so the
-        context window around one hit reprinted the next one."""
         text = "email j.doe@somecollege.edu then call 614-555-9876 about it"
         detections = scan_text(text, field_path="t")
         assert len(detections) >= 2
@@ -224,8 +197,6 @@ class TestDetectionsCarryNoValue:
 
 class TestOverlapResolution:
     def test_the_most_severe_detection_wins(self) -> None:
-        """A bearer token also matches the generic assigned_secret rule.
-        Reporting both double-counts one problem."""
         detections = scan_text('token = "Bearer ' + "a" * 30 + '"', field_path="t")
         spans = [(d.start, d.end) for d in detections]
         for i, (s1, e1) in enumerate(spans):
@@ -233,8 +204,6 @@ class TestOverlapResolution:
                 assert not (s1 < e2 and s2 < e1), "overlapping detections survived"
 
     def test_a_vault_entry_inside_an_email_does_not_double_replace(self) -> None:
-        """The bug this closes: the vault matched an org inside an email address,
-        both replacements applied, and the text was corrupted."""
         vault = EntityVault()
         vault.add("realcompany", "ORG")
         result = sanitize(
@@ -255,8 +224,6 @@ class TestVault:
         assert "Wolfram Dynamics" not in result.payload["messages"][1]["content"]
 
     def test_the_longest_literal_matches_first(self) -> None:
-        """A partially redacted organization name is often still identifying,
-        and looks sanitized."""
         vault = EntityVault()
         vault.add("Northgate", "ORG")
         vault.add("Northgate Research Group", "ORG")
@@ -282,7 +249,6 @@ class TestVault:
         assert EntityVault.load(path).entries == vault.entries
 
     def test_an_absent_vault_loads_empty(self, tmp_path) -> None:
-        """A fully synthetic corpus needs no vault."""
         assert len(EntityVault.load(tmp_path / "absent.json")) == 0
 
     def test_a_corrupt_vault_refuses_to_guess(self, tmp_path) -> None:
@@ -292,7 +258,6 @@ class TestVault:
             EntityVault.load(path)
 
     def test_contains_any_detects_a_survivor(self) -> None:
-        """Gate G06's check. Nothing downstream knows the string was sensitive."""
         vault = EntityVault()
         vault.add("Wolfram Dynamics", "ORG")
         assert vault.contains_any("still at Wolfram Dynamics")
@@ -305,7 +270,6 @@ class TestVault:
 
 class TestSurrogates:
     def test_the_same_value_maps_to_one_placeholder(self) -> None:
-        """Coreference: the same person is the same person across turns."""
         mapping = PlaceholderMap()
         detections = scan_text(
             "email j.doe@somecollege.edu and j.doe@somecollege.edu", field_path="t"
@@ -324,21 +288,17 @@ class TestSurrogates:
         assert first.payload == second.payload
 
     def test_surrogates_differ_across_families(self) -> None:
-        """The property that defeats memorization: no persistent pseudo-entity
-        spans the corpus."""
         pools = load_pools()
         a = sanitize(payload("ask j.doe@somecollege.edu"), scenario_family="fam.a", pools=pools)
         b = sanitize(payload("ask j.doe@somecollege.edu"), scenario_family="fam.b", pools=pools)
         assert a.payload["messages"][1]["content"] != b.payload["messages"][1]["content"]
 
     def test_a_structured_slot_keeps_its_shape(self) -> None:
-        """An email replaced by a person's name would be nonsense."""
         result = sanitize(payload("write to j.doe@somecollege.edu"), scenario_family="f")
         content = result.payload["messages"][1]["content"]
         assert "@example.invalid" in content
 
     def test_no_placeholder_survives_rehydration(self) -> None:
-        """A surviving [[SLOT_N]] would train a model to emit bracket tokens."""
         result = sanitize(
             payload("email j.doe@somecollege.edu, call 614-555-9876, due 2026-03-14"),
             scenario_family="f",
@@ -347,15 +307,12 @@ class TestSurrogates:
             assert not has_placeholder_residue(message["content"])
 
     def test_placeholders_avoid_the_public_validators_markers(self) -> None:
-        """TODO / FIXME / lorem ipsum would fail public validation for the wrong
-        reason."""
         mapping = PlaceholderMap()
         placeholder = mapping.placeholder_for("PERSON", "abc12345")
         for marker in ("TODO", "FIXME", "lorem ipsum", "..."):
             assert marker.lower() not in placeholder.lower()
 
     def test_rehydration_handles_double_digit_placeholders(self) -> None:
-        """[[PERSON_1]] must not clobber [[PERSON_10]]."""
         mapping = PlaceholderMap()
         for index in range(12):
             mapping.placeholder_for("PERSON", f"digest{index:02d}")
@@ -379,8 +336,6 @@ class TestPrivateFacts:
         assert rule_id in {s.rule_id for s in assessment.signals}
 
     def test_an_unsupported_entity_is_the_strongest_signal(self) -> None:
-        """The assistant naming something the prompt never mentioned is either a
-        hallucination or a memory. Both disqualify."""
         assessment = assess(
             payload("Rank these two items.", assistant="Prioritize Wolfram Dynamics first.")
         )
@@ -392,8 +347,6 @@ class TestPrivateFacts:
         assert "fact.unsupported_entity" not in {s.rule_id for s in assessment.signals}
 
     def test_a_sentence_initial_entity_in_the_prompt_still_counts(self) -> None:
-        """The bug this closes: the prompt's noun set skipped sentence-initial
-        words, so a prose prompt made the assistant look like it invented one."""
         assessment = assess(
             payload("Silverbrook is due in 5 days.", assistant="Then Silverbrook, then wait.")
         )
@@ -426,11 +379,6 @@ class TestPrivateFacts:
 
 
 class TestNoFalsePositivesOnOurOwnCorpus:
-    """False positives are failures, not cosmetics.
-
-    A reviewer taught to click through warnings will click through the real one.
-    """
-
     def test_the_generated_corpus_sanitizes_clean(self) -> None:
         pools = load_pools()
         for scenario in load_catalog():
@@ -456,7 +404,6 @@ class TestNoFalsePositivesOnOurOwnCorpus:
                 )
 
     def test_our_own_surrogate_names_are_not_flagged(self) -> None:
-        """Flagging the fictional names we generated is definitionally wrong."""
         known = known_surrogate_names(load_pools())
         detections = scan_text("Blue Harbor is due Friday", field_path="t", known_names=known)
         assert not [d for d in detections if d.kind == "person_name"]
@@ -467,8 +414,6 @@ class TestNoFalsePositivesOnOurOwnCorpus:
         assert [d for d in detections if d.kind == "person_name"]
 
     def test_a_secret_inside_a_known_name_still_fires(self) -> None:
-        """Only the structural layer consults the surrogate allowlist. A secret
-        is a secret wherever it appears."""
         known = known_surrogate_names(load_pools())
         detections = scan_text(
             "Northwind uses AKIAIOSFODNN7EXAMPLE", field_path="t", known_names=known
@@ -476,7 +421,6 @@ class TestNoFalsePositivesOnOurOwnCorpus:
         assert "aws_access_key" in {d.kind for d in detections}
 
     def test_a_bigram_does_not_span_a_sentence_boundary(self) -> None:
-        """ "…first. Then Silverbrook…" is not a person called "Then Silverbrook"."""
         detections = scan_text("Do that first. Then Silverbrook follows.", field_path="t")
         assert not [d for d in detections if d.kind == "person_name"]
 
@@ -492,7 +436,6 @@ class TestVerifySanitized:
         assert verify_sanitized(payload("ask [[PERSON_1]] about it"))
 
     def test_a_surviving_vault_literal_is_reported(self) -> None:
-        """The one failure nothing downstream could catch."""
         vault = EntityVault()
         vault.add("Wolfram Dynamics", "ORG")
         assert verify_sanitized(payload("at Wolfram Dynamics"), vault=vault)
@@ -518,7 +461,6 @@ class TestSanitizationResult:
         assert json.loads(json.dumps(result.to_dict()))["status"]
 
     def test_axes_are_scanned_too(self) -> None:
-        """An axis value is free-form text, and nobody thinks of axes as content."""
         result = sanitize(
             payload("nothing here", workspace="j.doe@somecollege.edu"), scenario_family="f"
         )
@@ -531,8 +473,6 @@ class TestRuleRegistry:
         assert len(set(ids)) == len(ids)
 
     def test_every_rule_id_is_versioned(self) -> None:
-        """A rule changing behaviour without changing its id makes two runs
-        incomparable."""
         for rule in ALL_RULES:
             assert rule.rule_id.endswith((".v1", ".v2", ".v3")), rule.rule_id
 

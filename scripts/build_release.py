@@ -1,15 +1,3 @@
-#!/usr/bin/env python3
-"""Assemble promoted examples into an immutable dataset release.
-
-    python scripts/build_release.py --version kleos-policy-v0.1.0
-
-Dedup, leakage, group-aware split, manifest, hash, seal.
-
-There is deliberately **no ``--force``**. Dataset versions are immutable: every
-comparison and every trained checkpoint that named a version meant one specific
-set of bytes. If the content changed, the version string changes.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -34,9 +22,7 @@ from kleos_training_data.staging.store import iter_records
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
-    )
+    parser = argparse.ArgumentParser()
     parser.add_argument("--version", required=True, help="e.g. kleos-policy-v0.1.0")
     parser.add_argument(
         "--strategy",
@@ -92,8 +78,6 @@ def main(argv: list[str] | None = None) -> int:
         require_coverage=not args.allow_uncovered_holdout,
     )
 
-    # The catalog's declarations pick the strategy unless one is forced. An OOD
-    # claim you can only describe after the split is not an OOD claim.
     strategy = args.strategy or holdout.strategy or "group"
 
     print(f"\n  version   : {args.version}")

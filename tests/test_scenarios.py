@@ -1,11 +1,3 @@
-"""Scenarios generate reproducible, policy-teaching examples.
-
-The properties here are the research claim in executable form. A scenario system
-that generates *plausible* examples is easy; one whose targets are derived from a
-stated policy, whose perturbations provably preserve the decision, and whose
-output is reproducible byte-for-byte is what makes the dataset defensible.
-"""
-
 from __future__ import annotations
 
 import pytest
@@ -56,8 +48,6 @@ def make_situation(*items: Item, **axes: str) -> Situation:
 
 
 class TestPolicyCorrectness:
-    """The policy encodes the research claim, so its edge cases are the claim."""
-
     def test_the_nearer_deadline_wins_when_evidence_matches(self) -> None:
         decision = rank_by_deadline_then_evidence(
             make_situation(
@@ -69,12 +59,6 @@ class TestPolicyCorrectness:
         assert decision.deciding_factor == "deadline"
 
     def test_confirmed_beats_sooner_but_unverified(self) -> None:
-        """The lesson the dataset exists to teach.
-
-        Urgency alone is not a reason to act. An item due tomorrow that nobody
-        has checked ranks below one due in three days that is confirmed, because
-        acting on the unverified one risks doing the wrong work entirely.
-        """
         decision = rank_by_deadline_then_evidence(
             make_situation(
                 make_item("item_a", days=1, evidence="unverified"),
@@ -95,7 +79,6 @@ class TestPolicyCorrectness:
         assert decision.deciding_factor == "impact"
 
     def test_the_decision_ignores_presentation_order(self) -> None:
-        """A policy that depended on ordering would be teaching a position bias."""
         items = (make_item("item_a", days=10), make_item("item_b", days=2))
         forward = rank_by_deadline_then_evidence(make_situation(*items))
         reverse = rank_by_deadline_then_evidence(
@@ -104,7 +87,6 @@ class TestPolicyCorrectness:
         assert forward.ranking == reverse.ranking
 
     def test_a_close_call_abstains_rather_than_guessing(self) -> None:
-        """A dataset of only clean decisions teaches that one is always available."""
         decision = rank_or_abstain_when_close(
             make_situation(
                 make_item("item_a", days=30, evidence="single_source", impact="low"),
@@ -157,14 +139,11 @@ class TestRendering:
             render_prompt(make_situation(format="interpretive_dance"))
 
     def test_the_system_prompt_states_the_policy_not_the_answer(self) -> None:
-        """A system prompt naming the winner makes every example trivial."""
         prompt = render_system_prompt(make_situation())
         for item in make_situation().items:
             assert item.name not in prompt
 
     def test_the_answer_names_the_deciding_factor(self) -> None:
-        """The stated reason is derived from the same computation as the ranking,
-        so it cannot drift into a plausible-sounding but wrong justification."""
         situation = make_situation(
             make_item("item_a", days=1, evidence="unverified"),
             make_item("item_b", days=3, evidence="confirmed"),
@@ -174,37 +153,30 @@ class TestRendering:
         assert "evidence" in answer.lower()
 
     def test_the_answer_asserts_nothing_absent_from_the_prompt(self) -> None:
-        """What the `no_unsupported_claims` review gate checks for."""
         situation = make_situation()
         decision = rank_by_deadline_then_evidence(situation)
         answer = render_answer(situation, decision)
         prompt = render_prompt(situation)
 
-        # Every entity named in the answer must appear in the prompt.
         for item in situation.items:
             if item.name in answer:
                 assert item.name in prompt
 
 
 class TestSurrogates:
-    """Surrogate keying is what defeats memorization; the properties are the design."""
-
     def test_names_are_stable_within_a_family(self) -> None:
-        """Coreference: "Northwind" in turn one is "Northwind" in turn three."""
         pool = SurrogatePool.load("generic_pool_a")
         first = pool.names("fam.a", point_index=0, count=3)
         second = pool.names("fam.a", point_index=0, count=3)
         assert first == second
 
     def test_names_differ_across_families(self) -> None:
-        """No persistent pseudo-entity spans the corpus for a model to memorize."""
         pool = SurrogatePool.load("generic_pool_a")
         a = pool.names("fam.a", point_index=0, count=3)
         b = pool.names("fam.b", point_index=0, count=3)
         assert a != b
 
     def test_names_within_one_situation_are_distinct(self) -> None:
-        """Two identically named items would make a ranking unreadable."""
         pool = SurrogatePool.load("generic_pool_a")
         names = pool.names("fam.a", point_index=3, count=4)
         assert len(set(names)) == 4
@@ -226,7 +198,6 @@ class TestSurrogates:
             assert len(set(pool.values)) == len(pool.values)
 
     def test_the_holdout_pool_is_disjoint_from_the_training_pool(self) -> None:
-        """A reserved entity that also appears in training is not held out at all."""
         pools = load_pools()
         train = set(pools["generic_pool_a"].values)
         held = set(pools["generic_pool_z"].values)
@@ -234,18 +205,13 @@ class TestSurrogates:
 
 
 class TestPerturbations:
-    """A perturbation must change the presentation and preserve the decision."""
-
     @pytest.mark.parametrize("kind", PERTURBATION_KINDS)
     def test_every_registered_kind_is_implemented(self, kind: str) -> None:
-        """A kind a scenario may declare but the generator cannot produce would
-        fail at generation time, long after the scenario was written."""
         situation = make_situation(format="bullets", presentation_order="as_given")
         assert _perturb(situation, kind, 0) is not None
 
     @pytest.mark.parametrize("kind", PERTURBATION_KINDS)
     def test_every_kind_actually_changes_something(self, kind: str) -> None:
-        """A no-op perturbation is an exact duplicate wearing a label."""
         situation = make_situation(format="bullets", presentation_order="as_given")
         variant = _perturb(situation, kind, 0)
         changed = (
@@ -280,8 +246,6 @@ class TestPerturbations:
     def test_a_kind_does_not_no_op_when_the_axis_already_holds_its_value(
         self, kind: str, axis: str, value: str
     ) -> None:
-        """The bug this closes: setting an axis to a fixed value silently does
-        nothing when the base already holds it, producing a duplicate."""
         situation = make_situation(**{axis: value})
         variant = _perturb(situation, kind, 0)
         assert variant.axes[axis] != value
@@ -295,7 +259,6 @@ class TestGeneration:
             assert len(candidates) == scenario.expected_example_count
 
     def test_generated_examples_satisfy_the_public_contract(self) -> None:
-        """Generation that produces something the trainer cannot load is wasted."""
         for scenario in load_catalog():
             pool = SurrogatePool.load(scenario.entities.pool)
             for candidate in generate(scenario, pool):
@@ -304,7 +267,6 @@ class TestGeneration:
                 TrainingExample.model_validate(payload)
 
     def test_generation_is_reproducible(self) -> None:
-        """Same scenario, same seed, byte-identical output on any machine."""
         scenario = load_catalog()[0]
         pool = SurrogatePool.load(scenario.entities.pool)
         first = [example_id(c.to_payload()) for c in generate(scenario, pool)]
@@ -318,7 +280,6 @@ class TestGeneration:
             assert len(set(ids)) == len(ids), f"{scenario.family} generated duplicates"
 
     def test_a_perturbation_shares_its_bases_group(self) -> None:
-        """A perturbation pair straddling the split boundary compares nothing."""
         scenario = load_catalog()[0]
         candidates = generate(scenario, SurrogatePool.load(scenario.entities.pool))
         by_group: dict[str, list] = {}
@@ -354,15 +315,11 @@ class TestCatalogLoading:
             assert scenario.task in SUPPORTED_TASKS
 
     def test_every_scenario_states_a_policy_claim_and_an_anti_claim(self) -> None:
-        """A scenario that cannot state its anti-claim has usually not identified
-        what it is testing."""
         for scenario in load_catalog():
             assert len(scenario.policy_claim.strip()) > 20
             assert len(scenario.anti_claim.strip()) > 20
 
     def test_a_typo_in_a_field_name_is_rejected(self, tmp_path) -> None:
-        """Silently ignoring `pertubation_kinds` would produce a catalog that
-        looks like it tests consistency and does not."""
         path = tmp_path / "broken.yaml"
         path.write_text(
             "family: x.y\ntask: tool_routing\n"
@@ -392,8 +349,6 @@ class TestCatalogLoading:
             load_scenario(path)
 
     def test_two_files_claiming_one_family_is_an_error(self, tmp_path) -> None:
-        """Merging two research claims into one scenario_family group would make
-        both unmeasurable."""
         body = (
             "family: dup.family\ntask: tool_routing\n"
             "policy_claim: a claim long enough to pass\n"

@@ -1,19 +1,3 @@
-"""Coverage: the difference between a large dataset and a diverse one.
-
-A count is not a research claim. "25,000 examples" says nothing about whether the
-model saw more than one kind of situation; a corpus can be enormous and still
-teach a single pattern with the entity names swapped.
-
-So this module reports the *joint* structure — task × domain, task × urgency,
-task × evidence_quality and so on — and names the cells that are empty or thin.
-An empty cell is a situation type the dataset has no opinion about, and that is
-exactly the thing a generalization claim needs to survive.
-
-Advisory, not gating. A thin cell is a research decision to make, not an error to
-fail a build on. The one exception is promotion gate G11, which reads the
-per-axis result to warn about a pilot axis.
-"""
-
 from __future__ import annotations
 
 from collections import Counter
@@ -29,8 +13,6 @@ from kleos_training_data.contract.constants import (
 )
 from kleos_training_data.contract.schemas import TrainingExample
 
-#: Axis pairs reported jointly. `task` is on every pair because a dataset that
-#: covers eight domains but only inside one task has not covered eight domains.
 DEFAULT_JOINT_AXES: tuple[tuple[str, str], ...] = (
     ("task", "domain"),
     ("task", "urgency"),
@@ -42,22 +24,14 @@ DEFAULT_JOINT_AXES: tuple[tuple[str, str], ...] = (
     ("task", "context_length"),
 )
 
-#: Below this, a cell is reported as thin rather than covered.
 DEFAULT_MIN_CELL_COUNT: int = 3
 
-#: Severity labels, most severe first.
 CRITICAL = "CRITICAL"
 WARNING = "WARNING"
 OK = "OK"
 
 
 def axis_value(example: TrainingExample, axis: str) -> str | None:
-    """Read one axis, special-casing ``task``.
-
-    ``task`` is registered as a variation axis but is not a field on
-    ``VariationAxes`` — the public coverage report reads ``example.task`` for it,
-    and this mirrors that quirk rather than fixing it.
-    """
     if axis == "task":
         return example.task
     value = example.variation_axes.as_dict().get(axis)
@@ -66,8 +40,6 @@ def axis_value(example: TrainingExample, axis: str) -> str | None:
 
 @dataclass
 class AxisCoverage:
-    """How one axis is populated."""
-
     axis: str
     counts: dict[str, int] = field(default_factory=dict)
     missing: int = 0
@@ -82,12 +54,10 @@ class AxisCoverage:
 
     @property
     def is_constant(self) -> bool:
-        """A single-valued axis cannot support a claim about that axis."""
         return self.distinct == 1 and self.total > 1
 
     @property
     def imbalance(self) -> float:
-        """Ratio of the most common value to the least. 1.0 is perfectly even."""
         if not self.counts:
             return 0.0
         low = min(self.counts.values())
@@ -118,8 +88,6 @@ class AxisCoverage:
 
 @dataclass
 class JointCoverage:
-    """How one pair of axes is populated together."""
-
     axes: tuple[str, str]
     cells: dict[str, int] = field(default_factory=dict)
     empty: list[str] = field(default_factory=list)
@@ -131,9 +99,6 @@ class JointCoverage:
 
     @property
     def possible(self) -> int:
-        """Cartesian product over *observed* values, not over every value the
-        catalog could produce. Reporting against a hypothetical space would make
-        every dataset look sparse."""
         return self.observed + len(self.empty)
 
     @property
@@ -164,8 +129,6 @@ class JointCoverage:
 
 @dataclass
 class CoverageReport:
-    """Everything worth knowing about a corpus's shape."""
-
     example_count: int = 0
     axes: dict[str, AxisCoverage] = field(default_factory=dict)
     joint: list[JointCoverage] = field(default_factory=list)
@@ -192,16 +155,10 @@ class CoverageReport:
 
     @property
     def consistency_measurable(self) -> bool:
-        """Whether any group has two or more members.
-
-        Consistency testing compares members of one group. With every group a
-        singleton it reports nothing at all — silently, which is the problem.
-        """
         return any(size >= 2 for size in self.groups.values())
 
     @property
     def severity(self) -> str:
-        """The worst severity anywhere in the report."""
         levels = [a.severity for a in self.axes.values()] + [j.severity for j in self.joint]
         if not self.consistency_measurable and self.example_count > 1:
             levels.append(CRITICAL)
@@ -238,7 +195,6 @@ def build_coverage_report(
     joint_axes: tuple[tuple[str, str], ...] = DEFAULT_JOINT_AXES,
     min_cell_count: int = DEFAULT_MIN_CELL_COUNT,
 ) -> CoverageReport:
-    """Describe a corpus's shape."""
     report = CoverageReport(example_count=len(examples))
     if not examples:
         report.notes.append("The corpus is empty.")
@@ -320,7 +276,6 @@ def build_coverage_report(
 
 
 def render_coverage_report(report: CoverageReport, *, max_rows: int = 12) -> str:
-    """Human-readable coverage, ending with the point of the whole exercise."""
     icons = {CRITICAL: "✗", WARNING: "!", OK: "✓"}
     lines = [
         f"  examples : {report.example_count}",
@@ -378,7 +333,6 @@ def render_coverage_report(report: CoverageReport, *, max_rows: int = 12) -> str
 
 
 def ood_readiness(examples: list[TrainingExample]) -> dict[str, Any]:
-    """Whether the corpus can support the OOD shifts a catalog might declare."""
     formats = {axis_value(e, "format") for e in examples} - {None}
     entities = {axis_value(e, "entities") for e in examples} - {None}
     domains = {axis_value(e, "domain") for e in examples} - {None}

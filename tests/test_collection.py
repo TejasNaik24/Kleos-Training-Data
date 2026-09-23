@@ -1,11 +1,3 @@
-"""Collection: adapters, SSE parsing, and the production guard.
-
-The guard tests are the important ones. Every condition is checked
-independently, because a guard that passes when three of four conditions hold is
-a guard that will eventually let a production capture through on a Friday
-afternoon.
-"""
-
 from __future__ import annotations
 
 import pytest
@@ -71,7 +63,6 @@ class TestSSEParsing:
         assert [f.type for f in sse_frames('data: {"type": "done"}')] == ["done"]
 
     def test_a_malformed_frame_raises(self) -> None:
-        """Silently dropping frames would truncate an answer with nothing noticing."""
         with pytest.raises(CaptureError, match="Malformed SSE frame"):
             list(sse_frames("data: not json", ""))
 
@@ -102,7 +93,6 @@ class TestAnswerAssembly:
         assert counts == {"answer_start": 1, "answer_delta": 2, "done": 1}
 
     def test_a_stream_without_done_raises(self) -> None:
-        """A truncated answer must not be treated as a complete one."""
         with pytest.raises(CaptureError, match="without a 'done' frame"):
             collect_answer(sse_frames('data: {"type": "answer_delta", "text": "partial"}', ""))
 
@@ -111,7 +101,6 @@ class TestAnswerAssembly:
             collect_answer(sse_frames('data: {"type": "error", "code": "rate_limit"}', ""))
 
     def test_frame_counts_record_activity_without_recording_content(self) -> None:
-        """The audit trail shows what the backend did, never what it said."""
         _, counts = collect_answer(
             sse_frames(
                 'data: {"type": "citation", "url": "https://private.example/doc"}',
@@ -130,7 +119,6 @@ class TestMockAdapter:
         assert "Northwind" in capture.answer_text
 
     def test_it_emits_artifacts_normalization_must_handle(self) -> None:
-        """A mock that gives normalization nothing to do proves nothing about it."""
         capture = MockBackendAdapter().run(
             make_request(expected_answer="1. A.\n2. B."), batch_id="b1"
         )
@@ -142,7 +130,6 @@ class TestMockAdapter:
         assert "<think>" not in capture.answer_text
 
     def test_it_is_deterministic(self) -> None:
-        """Re-running a batch must not fill staging with near-duplicates."""
         first = MockBackendAdapter().run(make_request(), batch_id="b1")
         second = MockBackendAdapter().run(make_request(), batch_id="b1")
         assert first.capture_id == second.capture_id
@@ -169,12 +156,9 @@ class TestMockAdapter:
         )
 
     def test_integrations_are_recorded_as_disabled(self) -> None:
-        """Any integration that fires pulls in more of the operator's real
-        accounts for zero research value."""
         assert MockBackendAdapter().run(make_request(), batch_id="b1").integrations_disabled
 
     def test_it_refuses_without_a_policy_derived_answer(self) -> None:
-        """The mock lane exercises transport, not answer generation."""
         with pytest.raises(CaptureError, match="policy-derived answer"):
             MockBackendAdapter().run(make_request(expected_answer=None), batch_id="b1")
 
@@ -207,14 +191,10 @@ class TestLocalDetection:
         ],
     )
     def test_everything_else_is_production(self, url: str) -> None:
-        """The default has to be the safe one. An internal IP is still somebody's
-        real deployment."""
         assert not is_local(url)
 
 
 class TestProductionGuard:
-    """Every condition is load-bearing and checked on its own."""
-
     def _env(self, **overrides) -> dict[str, str]:
         env = {ENV_ALLOW: "1"}
         env.update(overrides)
@@ -255,8 +235,6 @@ class TestProductionGuard:
             assert_capture_allowed(PROD_URL, allow_production=True, confirm="yes", env=self._env())
 
     def test_ci_refuses_even_when_everything_else_is_satisfied(self) -> None:
-        """Not overridable. An automated production capture is never legitimate,
-        and a flag that could disable this would end up in a workflow file."""
         with pytest.raises(ProductionGuardError, match="CI is set"):
             assert_capture_allowed(
                 PROD_URL,
@@ -275,8 +253,6 @@ class TestProductionGuard:
         assert "disable" not in rendered
 
     def test_the_audit_record_stores_a_host_not_a_url(self) -> None:
-        """A URL can carry a token in its query string, and this file sits next
-        to the batch it authorized."""
         authorization = assert_capture_allowed(
             f"{PROD_URL}/api?access_token=supersecretvalue",
             allow_production=True,
