@@ -113,12 +113,14 @@ class FactRiskSignal:
     score: float
     rationale: str
     excerpt: str
+    field: str = "content"
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "rule_id": self.rule_id,
             "message_index": self.message_index,
             "role": self.role,
+            "field": self.field,
             "span": list(self.span),
             "score": self.score,
             "rationale": self.rationale,
@@ -185,57 +187,67 @@ def assess(payload: dict[str, Any]) -> FactRiskAssessment:
 
     for index, message in enumerate(messages):
         role = str(message.get("role", ""))
-        content = str(message.get("content", ""))
+        for field_name, content in _fields(message):
+            for rule in FACT_RULES:
+                for match in rule.pattern.finditer(content):
+                    signals.append(
+                        FactRiskSignal(
+                            rule_id=rule.rule_id,
+                            message_index=index,
+                            role=role,
+                            span=(match.start(), match.end()),
+                            score=rule.score,
+                            rationale=rule.rationale,
+                            excerpt=redacted_excerpt(content, match.start(), match.end()),
+                            field=field_name,
+                        )
+                    )
 
-        for rule in FACT_RULES:
-            for match in rule.pattern.finditer(content):
+            if role != "assistant":
+                continue
+
+            for noun in sorted(_asserted_nouns(content) - prompt_nouns):
+                position = content.find(noun)
                 signals.append(
                     FactRiskSignal(
-                        rule_id=rule.rule_id,
+                        rule_id="fact.unsupported_entity",
                         message_index=index,
                         role=role,
-                        span=(match.start(), match.end()),
-                        score=rule.score,
-                        rationale=rule.rationale,
-                        excerpt=redacted_excerpt(content, match.start(), match.end()),
+                        span=(position, position + len(noun)),
+                        score=0.6,
+                        rationale=(
+                            f"the assistant names an entity absent from the prompt "
+                            f"({len(noun)} chars); either invented or remembered"
+                        ),
+                        excerpt=redacted_excerpt(content, position, position + len(noun)),
+                        field=field_name,
                     )
                 )
 
-        if role != "assistant":
-            continue
-
-        for noun in sorted(_asserted_nouns(content) - prompt_nouns):
-            position = content.find(noun)
-            signals.append(
-                FactRiskSignal(
-                    rule_id="fact.unsupported_entity",
-                    message_index=index,
-                    role=role,
-                    span=(position, position + len(noun)),
-                    score=0.6,
-                    rationale=(
-                        f"the assistant names an entity absent from the prompt "
-                        f"({len(noun)} chars); either invented or remembered"
-                    ),
-                    excerpt=redacted_excerpt(content, position, position + len(noun)),
+            for number in sorted(set(_SPECIFIC_NUMBER.findall(content)) - prompt_numbers):
+                position = content.find(number)
+                signals.append(
+                    FactRiskSignal(
+                        rule_id="fact.unsupported_number",
+                        message_index=index,
+                        role=role,
+                        span=(position, position + len(number)),
+                        score=0.5,
+                        rationale="the assistant asserts a specific figure absent from the prompt",
+                        excerpt=redacted_excerpt(content, position, position + len(number)),
+                        field=field_name,
+                    )
                 )
-            )
-
-        for number in sorted(set(_SPECIFIC_NUMBER.findall(content)) - prompt_numbers):
-            position = content.find(number)
-            signals.append(
-                FactRiskSignal(
-                    rule_id="fact.unsupported_number",
-                    message_index=index,
-                    role=role,
-                    span=(position, position + len(number)),
-                    score=0.5,
-                    rationale="the assistant asserts a specific figure absent from the prompt",
-                    excerpt=redacted_excerpt(content, position, position + len(number)),
-                )
-            )
 
     return FactRiskAssessment(signals=_with_masked_excerpts(signals, messages))
+
+
+def _fields(message: dict[str, Any]) -> list[tuple[str, str]]:
+    fields = [("content", str(message.get("content", "")))]
+    reasoning = message.get("reasoning")
+    if isinstance(reasoning, str) and reasoning:
+        fields.append(("reasoning", reasoning))
+    return fields
 
 
 def _with_masked_excerpts(
@@ -243,15 +255,14 @@ def _with_masked_excerpts(
 ) -> list[FactRiskSignal]:
     from kleos_training_data.privacy.detect import redacted_excerpt
 
-    spans_by_message: dict[int, tuple[tuple[int, int], ...]] = {}
+    spans: dict[tuple[int, str], tuple[tuple[int, int], ...]] = {}
     for signal in signals:
-        spans_by_message.setdefault(signal.message_index, ())
-    for index in spans_by_message:
-        spans_by_message[index] = tuple(s.span for s in signals if s.message_index == index)
+        key = (signal.message_index, signal.field)
+        spans[key] = (*spans.get(key, ()), signal.span)
 
     rebuilt: list[FactRiskSignal] = []
     for signal in signals:
-        content = str(messages[signal.message_index].get("content", ""))
+        text = str(messages[signal.message_index].get(signal.field, ""))
         rebuilt.append(
             FactRiskSignal(
                 rule_id=signal.rule_id,
@@ -261,11 +272,12 @@ def _with_masked_excerpts(
                 score=signal.score,
                 rationale=signal.rationale,
                 excerpt=redacted_excerpt(
-                    content,
+                    text,
                     signal.span[0],
                     signal.span[1],
-                    mask_spans=spans_by_message[signal.message_index],
+                    mask_spans=spans[(signal.message_index, signal.field)],
                 ),
+                field=signal.field,
             )
         )
     return rebuilt

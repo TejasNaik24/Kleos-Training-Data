@@ -185,9 +185,14 @@ counts; the holdout; the families and perturbation kinds; a fingerprint of
 each scenario family; and the pinned contract commit. Build timestamps are not
 part of any content hash, so identical content always produces identical hashes.
 
-Releases can be rebuilt from source. Running `make slice-clean slice` in a fresh
-clone builds the full catalog into a release whose split files and content hash
-(`3cc9a744…`) are byte-identical to `kleos-policy-v0.0.6`.
+Releases can be rebuilt from source.
+
+- **At commit `c5cc730`:** running `make slice-clean slice` in a fresh clone builds
+  the full catalog into a release whose split files and content hash (`3cc9a744…`)
+  are byte-identical to `kleos-policy-v0.0.6`.
+- **From the policy-reasoning change on:** the same build produces the
+  `kleos-policy-v0.0.7` shape. Its `test.jsonl` is still byte-identical to
+  v0.0.6's, so every evaluation stays comparable.
 
 The version strings `PIPELINE_VERSION` (0.1.0), `privacy-rules-v1` and
 `review-rubric-v1` were not changed between v0.0.2 and v0.0.6, although the code

@@ -257,6 +257,11 @@ def build_coverage_report(
         "max_chars": float(max(lengths)),
         "mean_turns": round(sum(turns) / len(turns), 2),
     }
+    traces = [len(m.reasoning) for e in examples for m in e.messages if m.reasoning is not None]
+    if traces:
+        report.message_lengths["reasoning_traces"] = float(len(traces))
+        report.message_lengths["reasoning_mean_chars"] = round(sum(traces) / len(traces), 1)
+        report.message_lengths["reasoning_max_chars"] = float(max(traces))
 
     if not report.consistency_measurable:
         report.notes.append(
@@ -319,6 +324,12 @@ def render_coverage_report(report: CoverageReport, *, max_rows: int = 12) -> str
         f"    quality           : {report.quality}",
         f"    mean turns        : {report.message_lengths.get('mean_turns', 0)}",
     ]
+    if report.message_lengths.get("reasoning_traces"):
+        lines.append(
+            f"    reasoning traces  : {int(report.message_lengths['reasoning_traces'])} "
+            f"(mean {report.message_lengths['reasoning_mean_chars']}, "
+            f"max {int(report.message_lengths['reasoning_max_chars'])} chars)"
+        )
 
     if report.notes:
         lines += ["", "  ── notes " + "─" * 59]

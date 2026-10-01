@@ -154,6 +154,8 @@ class ReviewPacket:
         lines += ["", "### Conversation", ""]
 
         for message in item.payload.get("messages", []):
+            if message.get("reasoning"):
+                lines += ["**reasoning:**", "", "```", str(message["reasoning"]), "```", ""]
             lines += [
                 f"**{message.get('role')}:**",
                 "",

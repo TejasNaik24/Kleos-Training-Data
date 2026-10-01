@@ -27,6 +27,7 @@ class ScenarioRequest:
     perturbation_of: str | None = None
     perturbation_kind: str | None = None
     expected_answer: str | None = None
+    expected_reasoning: str | None = None
     options: dict[str, Any] = field(default_factory=dict)
 
 

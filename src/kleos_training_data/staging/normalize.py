@@ -29,6 +29,19 @@ def _normalize_text(text: str) -> tuple[str, list[str]]:
     return rejoined, changes
 
 
+def _normalize_reasoning(text: str) -> str:
+    if "</think>" in text.lower() or "<think>" in text.lower():
+        raise ContractViolationError(
+            "Policy reasoning must not contain <think> tags.",
+            suggestions=["Reasoning travels in its own field; it is never a span in content."],
+        )
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    cleaned = "\n".join(line.rstrip() for line in text.split("\n")).strip()
+    if not cleaned:
+        raise ContractViolationError("Policy reasoning is empty after normalization.")
+    return cleaned
+
+
 def normalize_capture(
     capture: RawCapture,
     *,
@@ -38,6 +51,7 @@ def normalize_capture(
     group_id: str,
     perturbation_of: str | None = None,
     perturbation_kind: str | None = None,
+    reasoning: str | None = None,
 ) -> NormalizedCandidate:
     answer, changes = _normalize_text(capture.answer_text)
     if not answer.strip():
@@ -62,12 +76,15 @@ def normalize_capture(
         if change not in changes:
             changes.append(change)
 
+    assistant: dict[str, Any] = {"role": "assistant", "content": answer}
+    if reasoning is not None:
+        assistant["reasoning"] = _normalize_reasoning(reasoning)
     payload: dict[str, Any] = {
         "task": capture.scenario.task,
         "messages": [
             {"role": "system", "content": system},
             {"role": "user", "content": prompt},
-            {"role": "assistant", "content": answer},
+            assistant,
         ],
         "variation_axes": dict(variation_axes),
     }
@@ -103,7 +120,10 @@ def candidate_from_payload(
     changes: list[str] = []
     for message in payload["messages"]:
         cleaned, message_changes = _normalize_text(message["content"])
-        normalized_messages.append({**message, "content": cleaned})
+        entry = {**message, "content": cleaned}
+        if entry.get("reasoning") is not None:
+            entry["reasoning"] = _normalize_reasoning(str(entry["reasoning"]))
+        normalized_messages.append(entry)
         for change in message_changes:
             if change not in changes:
                 changes.append(change)

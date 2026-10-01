@@ -110,14 +110,19 @@ def _apply(
     replacements = 0
     messages = []
     for index, message in enumerate(payload.get("messages") or []):
-        content = str(message.get("content", ""))
-        field_detections = by_field.get(f"messages[{index}].content", [])
-        redactable = [d for d in field_detections if d.redactable]
-        if redactable:
-            content = redact(content, redactable, mapping)
-            content = rehydrate(content, mapping, scenario_family=scenario_family, pools=pools)
-            replacements += len(redactable)
-        messages.append({**message, "content": content})
+        rebuilt = dict(message)
+        for field_name in ("content", "reasoning"):
+            if field_name == "reasoning" and not isinstance(message.get("reasoning"), str):
+                continue
+            text = str(message.get(field_name, ""))
+            field_detections = by_field.get(f"messages[{index}].{field_name}", [])
+            redactable = [d for d in field_detections if d.redactable]
+            if redactable:
+                text = redact(text, redactable, mapping)
+                text = rehydrate(text, mapping, scenario_family=scenario_family, pools=pools)
+                replacements += len(redactable)
+            rebuilt[field_name] = text
+        messages.append(rebuilt)
 
     axes = {}
     for key, value in (payload.get("variation_axes") or {}).items():
@@ -212,17 +217,18 @@ def verify_sanitized(payload: dict[str, Any], *, vault: EntityVault | None = Non
         if detection.severity == "block":
             problems.append(f"{detection.rule_id} at {detection.field_path}")
 
-    for message in payload.get("messages") or []:
-        content = str(message.get("content", ""))
-        if has_placeholder_residue(content):
-            problems.append("placeholder residue survived rehydration")
-            break
+    texts = [
+        str(message.get(field_name, ""))
+        for message in payload.get("messages") or []
+        for field_name in ("content", "reasoning")
+        if isinstance(message.get(field_name), str)
+    ]
 
-    if vault is not None:
-        for message in payload.get("messages") or []:
-            if vault.contains_any(str(message.get("content", ""))):
-                problems.append("a vault literal survived sanitization")
-                break
+    if any(has_placeholder_residue(text) for text in texts):
+        problems.append("placeholder residue survived rehydration")
+
+    if vault is not None and any(vault.contains_any(text) for text in texts):
+        problems.append("a vault literal survived sanitization")
 
     return problems
 

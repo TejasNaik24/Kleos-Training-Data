@@ -9,6 +9,7 @@ from kleos_training_data.contract.constants import PIPELINE_VERSION
 from kleos_training_data.errors import ScenarioError
 from kleos_training_data.scenarios.models import Scenario
 from kleos_training_data.scenarios.policies import Decision, decide
+from kleos_training_data.scenarios.reasoning import render_reasoning
 from kleos_training_data.scenarios.rendering import (
     render_answer,
     render_prompt,
@@ -257,10 +258,13 @@ def build_situation(
 
 
 def _messages(situation: Situation, decision: Decision) -> list[dict[str, Any]]:
+    assistant: dict[str, Any] = {"role": "assistant", "content": render_answer(situation, decision)}
+    if situation.axes.get("format", "bullets") != "json":
+        assistant["reasoning"] = render_reasoning(situation, decision)
     return [
         {"role": "system", "content": render_system_prompt(situation)},
         {"role": "user", "content": render_prompt(situation)},
-        {"role": "assistant", "content": render_answer(situation, decision)},
+        assistant,
     ]
 
 

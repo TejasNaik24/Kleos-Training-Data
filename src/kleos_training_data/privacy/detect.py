@@ -201,6 +201,9 @@ def iter_text_fields(payload: dict[str, Any]) -> Iterator[tuple[str, str]]:
         name = message.get("name")
         if isinstance(name, str) and name:
             yield f"messages[{index}].name", name
+        reasoning = message.get("reasoning")
+        if isinstance(reasoning, str) and reasoning:
+            yield f"messages[{index}].reasoning", reasoning
 
     for key, value in sorted((payload.get("variation_axes") or {}).items()):
         if isinstance(value, str):

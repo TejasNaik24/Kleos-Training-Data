@@ -39,6 +39,7 @@ def to_request(scenario: Scenario, candidate: Candidate) -> ScenarioRequest:
         perturbation_of=candidate.perturbation_of,
         perturbation_kind=candidate.perturbation_kind,
         expected_answer=assistant,
+        expected_reasoning=candidate.messages[2].get("reasoning"),
     )
 
 

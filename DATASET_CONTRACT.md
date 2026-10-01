@@ -51,7 +51,7 @@ Each line of a split file is one `TrainingExample`:
 | Field | Type | Required | Rules |
 | --- | --- | --- | --- |
 | `id` | string | Yes | Matches the [ID pattern](#ids) |
-| `version` | string | No | Defaults to `1.0` |
+| `version` | string | No | Defaults to `1.0`. `1.1` exactly when a message carries `reasoning`, set automatically |
 | `task` | string | Yes | One of the seven [tasks](#vocabularies) |
 | `domain` | string | No | When set, must equal `variation_axes.domain` |
 | `messages` | list of messages | Yes | At least two, following the [conversation rules](#conversation-rules) |
@@ -59,7 +59,19 @@ Each line of a split file is one `TrainingExample`:
 | `metadata` | object | No | Source, quality status and grouping information |
 
 Each message has a `role` (`system`, `user`, `assistant` or `tool`), a non-empty
-`content` string, and an optional `name`.
+`content` string, an optional `name`, and an optional `reasoning` string.
+
+`reasoning` holds step-by-step reasoning derived from the decision policy that
+produced the answer. It is the scoring, the checks and the factor that decided it,
+written out ("shows its math").
+
+- It is allowed only on `assistant` messages and must be non-empty when present.
+- It never appears on an example whose `variation_axes.format` is `json`, so it
+  never appears in a test split built with the format holdout.
+- A consumer that trains a reasoning model passes it to the model's chat template
+  (for Mistral reasoning models, `[THINK]…[/THINK]`). Any other consumer can ignore
+  it.
+- It is scanned by every privacy and fact check exactly like `content`.
 
 `variation_axes` has 13 named fields, all optional except `domain`: `domain`,
 `entities`, `urgency`, `deadlines`, `evidence_quality`, `conflicting_evidence`,
@@ -151,6 +163,9 @@ A training example is rejected unless all of the following hold:
 - No two assistant messages are consecutive.
 - No message content is empty or whitespace-only.
 - Every `tool` message has a `name`.
+- `reasoning` appears only on assistant messages, is never empty or
+  whitespace-only, and never appears on a `json`-format example.
+- An example is schema `1.1` if and only if it carries `reasoning`.
 
 ## IDs
 
@@ -158,8 +173,8 @@ IDs must match `^[A-Za-z0-9][A-Za-z0-9._:-]{2,127}$`.
 
 This pipeline emits IDs of the form `kx-<task code>-<16 hex characters>`. The
 hex part is the start of a SHA-256 digest over the example's canonical content:
-the task, each message's role, content and name, and the non-null variation
-axes. Message text is normalized before hashing (line endings converted to LF,
+the task, each message's role, content and name, the message's `reasoning` when it
+has one, and the non-null variation axes. Message text is normalized before hashing (line endings converted to LF,
 trailing spaces removed from each line, Unicode NFC, outer whitespace stripped).
 Metadata, `id`, `version` and `domain` are excluded, so reviewing or re-releasing
 an example leaves its ID unchanged, while any change to its content produces a
@@ -217,7 +232,7 @@ them changes every line:
 
 | Setting | Effect |
 | --- | --- |
-| `exclude_none=False` | Every message carries `"name": null` and every unset axis is written as `null` |
+| `exclude_none=False` | Every message carries `"name": null` and every unset axis is written as `null`. The one exception is `reasoning`, which is written only when present, so an example without it serializes exactly as it did before the field existed |
 | `sort_keys=True` | Keys appear in alphabetical order, not declaration order |
 | `ensure_ascii=False` | Non-ASCII characters are written as themselves, not as escapes |
 

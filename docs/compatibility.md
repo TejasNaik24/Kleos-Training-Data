@@ -123,6 +123,22 @@ recorded in `DELIBERATE_DELTAS` in `pin.py`:
 | Metadata extras are allowlisted | `ExampleMetadata` accepts any extra key upstream, and extra keys ship inside `train.jsonl` |
 | Only `quality_status: reviewed` is promoted | The kleos-models loader drops other statuses by default, so a release of them would validate and then train on nothing |
 
+## Pending upstream change
+
+Releases from `kleos-policy-v0.0.7` on carry an optional assistant `reasoning`
+field (see `DATASET_CONTRACT.md`). Until kleos-models accepts it, the mirror is
+looser than upstream on this one point:
+
+- The kleos-models `Message` at the pinned commit rejects unknown keys.
+- So `check_contract_compat.py --release` fails on such a release, at its public
+  loader check.
+- A benchmark built from the test split is unaffected, because `test.jsonl` carries
+  no `reasoning`.
+
+When kleos-models adds the field, move the pin and record the new behaviour in
+`pin.py`. The differential `VALID_CASES` deliberately contain no `reasoning` until
+then.
+
 ## Known upstream issues
 
 These issues were present in kleos-models at the pinned commit. The mirror does

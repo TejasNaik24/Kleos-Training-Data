@@ -39,6 +39,8 @@ def canonicalize(payload: Mapping[str, Any]) -> dict[str, Any]:
         }
         if message.get("name"):
             entry["name"] = message["name"]
+        if message.get("reasoning"):
+            entry["reasoning"] = _normalize_content(str(message["reasoning"]))
         messages.append(entry)
 
     axes = {

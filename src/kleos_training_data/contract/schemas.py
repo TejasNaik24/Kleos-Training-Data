@@ -6,12 +6,21 @@ import re
 from datetime import UTC, datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SerializerFunctionWrapHandler,
+    field_validator,
+    model_serializer,
+    model_validator,
+)
 
 from kleos_training_data.contract.constants import (
     DATASET_SCHEMA_VERSION,
     PREPROCESSING_VERSION,
     QUALITY_STATUSES,
+    REASONING_SCHEMA_VERSION,
     SOURCE_TYPES,
     SUPPORTED_TASKS,
     VARIATION_AXES,
@@ -40,6 +49,10 @@ class Message(BaseModel):
     role: Literal["system", "user", "assistant", "tool"]
     content: str
     name: str | None = Field(default=None, description="Tool name for role='tool'.")
+    reasoning: str | None = Field(
+        default=None,
+        description="Policy-derived reasoning for an assistant turn; written only when present.",
+    )
 
     @field_validator("content")
     @classmethod
@@ -48,11 +61,31 @@ class Message(BaseModel):
             raise ValueError("message content must not be empty or whitespace-only")
         return value
 
+    @field_validator("reasoning")
+    @classmethod
+    def _reasoning_not_blank(cls, value: str | None) -> str | None:
+        if value is not None and not value.strip():
+            raise ValueError("reasoning must not be empty or whitespace-only when present")
+        return value
+
     @model_validator(mode="after")
     def _tool_needs_name(self) -> Message:
         if self.role == "tool" and not self.name:
             raise ValueError("messages with role='tool' require a 'name'")
         return self
+
+    @model_validator(mode="after")
+    def _reasoning_on_assistant_only(self) -> Message:
+        if self.reasoning is not None and self.role != "assistant":
+            raise ValueError("reasoning is allowed only on assistant messages")
+        return self
+
+    @model_serializer(mode="wrap")
+    def _omit_absent_reasoning(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data: dict[str, Any] = handler(self)
+        if self.reasoning is None:
+            data.pop("reasoning", None)
+        return data
 
 
 class VariationAxes(BaseModel):
@@ -178,6 +211,17 @@ class TrainingExample(BaseModel):
                 f"domain={self.domain!r} contradicts variation_axes.domain="
                 f"{self.variation_axes.domain!r}"
             )
+        return self
+
+    @model_validator(mode="after")
+    def _reasoning_shape(self) -> TrainingExample:
+        has_reasoning = any(m.reasoning is not None for m in self.messages)
+        if has_reasoning and getattr(self.variation_axes, "format", None) == "json":
+            raise ValueError("reasoning is not allowed on json-format examples")
+        if has_reasoning and self.version == DATASET_SCHEMA_VERSION:
+            self.version = REASONING_SCHEMA_VERSION
+        if not has_reasoning and self.version == REASONING_SCHEMA_VERSION:
+            raise ValueError(f"schema {REASONING_SCHEMA_VERSION} requires a reasoning field")
         return self
 
     @property

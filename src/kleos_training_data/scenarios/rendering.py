@@ -160,48 +160,13 @@ def render_prompt(situation: Situation) -> str:
     return "\n".join(parts).strip()
 
 
+def _label_line(decision: Decision) -> str:
+    return f"What decided it: {decision.deciding_factor}."
+
+
 def _answer_bullets(situation: Situation, decision: Decision) -> str:
     if decision.abstained:
-        first, second = (situation.item(k) for k in decision.ranking[:2])
-        if decision.deciding_factor == "ask_before_crossing":
-            return (
-                f"- Nothing inside {situation.workspace_name} is solid enough to answer "
-                f"this.\n"
-                f"- {decision.resolver}.\n"
-                f"- I have not read it, and will not without you saying so — that "
-                f"boundary is yours to open, not mine."
-            )
-        if decision.deciding_factor == "request_ambiguous":
-            return (
-                f"- I could answer this several ways and I do not know which one you "
-                f"want.\n"
-                f"- {first.name} and {second.name} answer different questions, so "
-                f"picking one would be a coin flip dressed as a recommendation.\n"
-                f"- {decision.resolver}."
-            )
-        if decision.deciding_factor == "stale_explicit_conflict":
-            return (
-                f"- {decision.resolver}\n"
-                f"- I have not overwritten it. Until you say otherwise, what you told "
-                f"me stands."
-            )
-        if decision.deciding_factor == "missing_input":
-            return (
-                f"- I can't answer this yet, and the gap is not a close call — "
-                f"something the answer depends on is missing.\n"
-                f"- {first.name} leads on what you have given me, but it rests on an "
-                f"input nobody has supplied.\n"
-                f"- So, one question: {decision.resolver}.\n"
-                f"- With that, this becomes a straightforward call."
-            )
-        return (
-            f"- These two are too close to separate on what you have: {first.name} "
-            f"and {second.name}.\n"
-            f"- The gap between them is smaller than the uncertainty in the evidence, "
-            f"so ranking them now would be a guess dressed as a decision.\n"
-            f"- Do this first: {decision.resolver}.\n"
-            f"- If that comes back clean, {first.name} goes first."
-        )
+        return f"{_declined_bullets(situation, decision)}\n\n{_label_line(decision)}"
 
     lines = []
     for position, (key, why) in enumerate(
@@ -215,44 +180,52 @@ def _answer_bullets(situation: Situation, decision: Decision) -> str:
     return "\n".join(lines)
 
 
+def _declined_bullets(situation: Situation, decision: Decision) -> str:
+    first, second = (situation.item(k) for k in decision.ranking[:2])
+    if decision.deciding_factor == "ask_before_crossing":
+        return (
+            f"- Nothing inside {situation.workspace_name} is solid enough to answer "
+            f"this.\n"
+            f"- {decision.resolver}.\n"
+            f"- I have not read it, and will not without you saying so — that "
+            f"boundary is yours to open, not mine."
+        )
+    if decision.deciding_factor == "request_ambiguous":
+        return (
+            f"- I could answer this several ways and I do not know which one you "
+            f"want.\n"
+            f"- {first.name} and {second.name} answer different questions, so "
+            f"picking one would be a coin flip dressed as a recommendation.\n"
+            f"- {decision.resolver}."
+        )
+    if decision.deciding_factor == "stale_explicit_conflict":
+        return (
+            f"- {decision.resolver}\n"
+            f"- I have not overwritten it. Until you say otherwise, what you told "
+            f"me stands."
+        )
+    if decision.deciding_factor == "missing_input":
+        return (
+            f"- I can't answer this yet, and the gap is not a close call — "
+            f"something the answer depends on is missing.\n"
+            f"- {first.name} leads on what you have given me, but it rests on an "
+            f"input nobody has supplied.\n"
+            f"- So, one question: {decision.resolver}.\n"
+            f"- With that, this becomes a straightforward call."
+        )
+    return (
+        f"- These two are too close to separate on what you have: {first.name} "
+        f"and {second.name}.\n"
+        f"- The gap between them is smaller than the uncertainty in the evidence, "
+        f"so ranking them now would be a guess dressed as a decision.\n"
+        f"- Do this first: {decision.resolver}.\n"
+        f"- If that comes back clean, {first.name} goes first."
+    )
+
+
 def _answer_prose(situation: Situation, decision: Decision) -> str:
     if decision.abstained:
-        first, second = (situation.item(k) for k in decision.ranking[:2])
-        if decision.deciding_factor == "ask_before_crossing":
-            return (
-                f"I can't answer this from {situation.workspace_name} — what is in "
-                f"there is too thinly supported to act on. There is something that "
-                f"would settle it, but it sits in another workspace and I have not "
-                f"opened it. {decision.resolver}. I would rather ask than quietly "
-                f"reach across."
-            )
-        if decision.deciding_factor == "request_ambiguous":
-            return (
-                f"I could take this several ways and I do not know which you want. "
-                f"{first.name} and {second.name} answer different questions, so "
-                f"choosing between them now would be a coin flip with a confident "
-                f"tone. {decision.resolver}."
-            )
-        if decision.deciding_factor == "stale_explicit_conflict":
-            return (
-                f"{decision.resolver} I have not overwritten it — until you say "
-                f"otherwise, what you told me stands."
-            )
-        if decision.deciding_factor == "missing_input":
-            return (
-                f"I don't have enough to answer this, and it is not that the options "
-                f"are close — something the answer depends on was never supplied. "
-                f"{first.name} leads on what you have given me, but it rests on an "
-                f"input nobody has checked. So rather than guess: {decision.resolver}. "
-                f"With that in hand this is a straightforward call."
-            )
-        return (
-            f"I would not rank {first.name} against {second.name} yet. They are close "
-            f"enough that the difference is inside the uncertainty in the evidence, so "
-            f"picking one now would be a guess with a confident tone. "
-            f"The useful next step is narrower than a decision: {decision.resolver}. "
-            f"If that holds up, {first.name} goes first."
-        )
+        return f"{_declined_prose(situation, decision)} {_label_line(decision)}"
 
     top = situation.item(decision.ranking[0])
     rest = [situation.item(k) for k in decision.ranking[1:]]
@@ -260,7 +233,46 @@ def _answer_prose(situation: Situation, decision: Decision) -> str:
     return (
         f"Start with {top.name} — {decision.rationale[0]}. "
         f"Then {tail}. "
-        f"{_factor_sentence(situation, decision)}"
+        f"{_label_line(decision)} {_factor_sentence(situation, decision)}"
+    )
+
+
+def _declined_prose(situation: Situation, decision: Decision) -> str:
+    first, second = (situation.item(k) for k in decision.ranking[:2])
+    if decision.deciding_factor == "ask_before_crossing":
+        return (
+            f"I can't answer this from {situation.workspace_name} — what is in "
+            f"there is too thinly supported to act on. There is something that "
+            f"would settle it, but it sits in another workspace and I have not "
+            f"opened it. {decision.resolver}. I would rather ask than quietly "
+            f"reach across."
+        )
+    if decision.deciding_factor == "request_ambiguous":
+        return (
+            f"I could take this several ways and I do not know which you want. "
+            f"{first.name} and {second.name} answer different questions, so "
+            f"choosing between them now would be a coin flip with a confident "
+            f"tone. {decision.resolver}."
+        )
+    if decision.deciding_factor == "stale_explicit_conflict":
+        return (
+            f"{decision.resolver} I have not overwritten it — until you say "
+            f"otherwise, what you told me stands."
+        )
+    if decision.deciding_factor == "missing_input":
+        return (
+            f"I don't have enough to answer this, and it is not that the options "
+            f"are close — something the answer depends on was never supplied. "
+            f"{first.name} leads on what you have given me, but it rests on an "
+            f"input nobody has checked. So rather than guess: {decision.resolver}. "
+            f"With that in hand this is a straightforward call."
+        )
+    return (
+        f"I would not rank {first.name} against {second.name} yet. They are close "
+        f"enough that the difference is inside the uncertainty in the evidence, so "
+        f"picking one now would be a guess with a confident tone. "
+        f"The useful next step is narrower than a decision: {decision.resolver}. "
+        f"If that holds up, {first.name} goes first."
     )
 
 

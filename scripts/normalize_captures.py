@@ -22,7 +22,7 @@ from kleos_training_data.scenarios.generator import generate
 from kleos_training_data.scenarios.loader import DEFAULT_CATALOG_DIR, load_catalog
 from kleos_training_data.scenarios.surrogates import SurrogatePool
 from kleos_training_data.staging.normalize import normalize_capture
-from kleos_training_data.staging.records import RawCapture
+from kleos_training_data.staging.records import CaptureLane, RawCapture
 from kleos_training_data.staging.store import iter_records, write_record
 
 
@@ -89,6 +89,9 @@ def main(argv: list[str] | None = None) -> int:
                 group_id=request.group_id,
                 perturbation_of=request.perturbation_of,
                 perturbation_kind=request.perturbation_kind,
+                reasoning=(
+                    request.expected_reasoning if capture.lane == CaptureLane.MOCK_BACKEND else None
+                ),
             )
         except ContractViolationError as exc:
             failures.append((capture.capture_id, exc.message))

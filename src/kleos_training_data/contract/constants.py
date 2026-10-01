@@ -4,6 +4,8 @@ from typing import Final
 
 DATASET_SCHEMA_VERSION: Final[str] = "1.0"
 
+REASONING_SCHEMA_VERSION: Final[str] = "1.1"
+
 PREPROCESSING_VERSION: Final[str] = "1.0"
 
 PIPELINE_VERSION: Final[str] = "0.1.0"

@@ -61,6 +61,13 @@ to the candidate's `transformations` list so a reviewer can see what was done:
 | `stripped_reasoning_span` | The answer contains a `<think>` reasoning span |
 | `trimmed_whitespace` | Trailing whitespace on a line or around the text was removed |
 
+`stripped_reasoning_span` removes a `<think>` span that a backend left inside the
+captured answer text. It never touches the separate `reasoning` field. That field
+carries policy-derived reasoning from the catalog request, and normalization
+attaches it only to mock-backend captures, whose answer is the policy's own.
+Normalization only converts its line endings and trims trailing whitespace. A
+`reasoning` value containing a `<think>` tag raises `ContractViolationError`.
+
 An empty answer raises `ContractViolationError`. If two captures normalize to
 identical content, the script reports a failure instead of letting one overwrite
 the other, since it means two catalog points render the same text.

@@ -24,8 +24,9 @@ are flagged.
 | Entity vault | `redact` | Registered literals | Operator-supplied names that no pattern can find, such as an employer or a project codename. Matched longest first and replaced like PII. |
 | Structural heuristics | `review` | 2 | Capitalized name bigrams and organization suffixes. Replaced like PII, and any match that remains after replacement marks the candidate `needs_review`. |
 
-Detection covers message content, message names and string-valued variation
-axes. Where two detections overlap, the more severe one wins, then the longer
+Detection covers message content, message names, assistant `reasoning` and
+string-valued variation axes. Sanitization, the residue and vault checks, and the
+fact checks treat `reasoning` exactly like `content`. Where two detections overlap, the more severe one wins, then the longer
 span, then the earlier one.
 
 The entity vault lives in `vault/entity_vault.json`. The file is written with

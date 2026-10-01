@@ -254,9 +254,18 @@ This runs the whole pipeline offline against the full scenario catalog:
 validation, mock capture, normalization, sanitization, a review packet, the mock
 machine review, a decision for every candidate, promotion, release building,
 verification, a coverage report and a compatibility check. It takes about five
-minutes and reproduces `kleos-policy-v0.0.6` byte for byte: the split files and
-the content hash `3cc9a744…` are identical, and the manifest differs only in its
-name, description and timestamps.
+minutes.
+
+- **At commit `c5cc730`,** before policy reasoning was added, it reproduces
+  `kleos-policy-v0.0.6` byte for byte. The split files and the content hash
+  `3cc9a744…` are identical, and the manifest differs only in its name,
+  description and timestamps.
+- **From the reasoning change on,** it builds the `kleos-policy-v0.0.7` shape. The
+  test split is still byte-identical to v0.0.6's. Train and validation answers
+  carry `reasoning` and a deciding-factor line.
+
+`make slice-clean` deletes the repository's `staging/` contents and
+`data/id_ledger.json`, so run it only in a fresh clone.
 
 The release is written to `releases/kleos-policy-v0.0.1`. That default name is
 unrelated to the historical v0.0.1 release, and `SLICE_VERSION=<name>` sets
