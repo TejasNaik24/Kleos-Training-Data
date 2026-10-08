@@ -20,7 +20,8 @@ data for KLEOS.
 
 KLEOS is an AI operating system for computer science students, live at
 [kleos-cs.vercel.app](https://kleos-cs.vercel.app). This repository builds the
-datasets used to fine-tune its decision-making models. Every example is generated
+datasets used to fine-tune its decision-making models, which are trained and
+evaluated in [Kleos-Models](https://github.com/TejasNaik24/Kleos-Models). Every example is generated
 from a scenario with fictional entities, every answer is computed from an
 explicit decision policy, and every release is immutable and content-hashed. Two
 models fine-tuned on release v0.0.6 raised a composite policy score from

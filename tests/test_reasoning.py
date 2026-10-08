@@ -196,7 +196,13 @@ class TestAnswersAndAttachment:
 
     @pytest.mark.requires_kleos_models
     def test_the_kleos_models_grader_reads_every_label(self, candidates: list[Candidate]) -> None:
-        from kleos_models.evaluation.graders import extract_deciding_factor
+        graders = pytest.importorskip("kleos_models.evaluation.graders")
+        extract_deciding_factor = getattr(graders, "extract_deciding_factor", None)
+        if extract_deciding_factor is None:
+            pytest.skip(
+                "the installed kleos-models predates extract_deciding_factor, which the "
+                "pinned contract commit does not include"
+            )
 
         labels = sorted({c.decision.deciding_factor for c in candidates})
         for candidate in candidates:

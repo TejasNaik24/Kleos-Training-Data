@@ -37,6 +37,13 @@ Pipeline changes made for a dataset release are listed with that release.
 - `validate_scenarios.py` suggests `capture_backend.py` as the next step, and
   the private-data scanner's failure message was reworded.
 
+#### Fixed
+
+- The contract-compatibility CI job failed because a reasoning test imports
+  `extract_deciding_factor`, which the pinned kleos-models commit does not
+  include. The test now skips when the installed kleos-models lacks it, and runs
+  once the pin moves.
+
 ### 0.1.0 - 2026-08-24
 
 Initial pipeline.
