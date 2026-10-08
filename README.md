@@ -1,5 +1,10 @@
 <div align="center">
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/kleos-mark-dark.svg">
+  <img src="docs/assets/kleos-mark-light.svg" alt="KLEOS logo" width="88">
+</picture>
+
 # KLEOS Training Data
 
 A Python pipeline that generates, screens and versions synthetic fine-tuning
