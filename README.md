@@ -23,13 +23,13 @@ KLEOS is an AI operating system for computer science students, live at
 datasets used to fine-tune its decision-making models. Every example is generated
 from a scenario with fictional entities, every answer is computed from an
 explicit decision policy, and every release is immutable and content-hashed. Two
-models fine-tuned on the current release raised a composite policy score from
+models fine-tuned on release v0.0.6 raised a composite policy score from
 0.47 to 0.80 on held-out prompts in an input format they never saw during
 training ([results and caveats](#results)).
 
 | Examples | Tasks | Scenario families | Decision policies | Promotion gates | Tests |
 | :---: | :---: | :---: | :---: | :---: | :---: |
-| 1,350 | 7 | 18 | 12 | 14 | 1,165 |
+| 1,350 | 7 | 18 | 12 | 14 | 1,223 |
 
 ## Contents
 
@@ -143,12 +143,14 @@ and the implications for the dataset are in the
   this repository, and `make slice` builds one locally.
 - Current releases evaluate one kind of shift, an unseen input format. Entity-pool
   and domain holdouts are declared in the catalog but not yet generated.
-- Abstention labels appear only in JSON-format answers, which the format holdout
-  places entirely in the test split. Exposing them in every answer format is
-  planned for the next release.
-- The approvals in the current release were recorded in bulk from the machine
-  review's gate results. A 141-example human review sample is prepared but not
-  yet completed.
+- In v0.0.6, decline labels appeared only in JSON-format answers, which the
+  format holdout places entirely in the test split. v0.0.7 adds them to every
+  training and validation answer. The results above were measured on v0.0.6.
+- kleos-models at the pinned contract commit does not yet accept the `reasoning`
+  field that v0.0.7 adds, so the compatibility check fails on that release until
+  the pin moves.
+- Approvals in v0.0.6 were recorded in bulk from the machine review's gate
+  results. The only completed human review is v0.0.5's 127-example sample.
 - The capture CLI runs the mock backend only. Adapters for the live KLEOS backend
   exist but are not yet connected to an HTTP transport.
 
@@ -221,7 +223,7 @@ The record format is specified in [DATASET_CONTRACT.md](DATASET_CONTRACT.md).
 | Scenario catalog | [![YAML](https://img.shields.io/badge/YAML-PyYAML-CB171E?logo=yaml&logoColor=white)](https://pyyaml.org/) |
 | Backend capture (optional) | [![HTTPX](https://img.shields.io/badge/HTTPX-client-3D4F5C)](https://www.python-httpx.org/) |
 | Machine review (optional) | [![Anthropic](https://img.shields.io/badge/Anthropic-SDK-191919?logo=anthropic&logoColor=white)](https://github.com/anthropics/anthropic-sdk-python) |
-| Testing | [![pytest](https://img.shields.io/badge/pytest-1%2C165%20tests-0A9EDC?logo=pytest&logoColor=white)](https://docs.pytest.org/) |
+| Testing | [![pytest](https://img.shields.io/badge/pytest-1%2C223%20tests-0A9EDC?logo=pytest&logoColor=white)](https://docs.pytest.org/) |
 | Linting, formatting and type checking | Ruff and mypy |
 | Continuous integration | [![GitHub Actions](https://img.shields.io/badge/GitHub%20Actions-7%20jobs-2088FF?logo=githubactions&logoColor=white)](.github/workflows/ci.yml) |
 | Build and task running | Hatchling and [![Make](https://img.shields.io/badge/Make-tasks-6D00CC?logo=make&logoColor=white)](Makefile) |
@@ -265,9 +267,10 @@ minutes.
   `kleos-policy-v0.0.6` byte for byte. The split files and the content hash
   `3cc9a744…` are identical, and the manifest differs only in its name,
   description and timestamps.
-- **From the reasoning change on,** it builds the `kleos-policy-v0.0.7` shape. The
-  test split is still byte-identical to v0.0.6's. Train and validation answers
-  carry `reasoning` and a deciding-factor line.
+- **From the reasoning change on,** it reproduces `kleos-policy-v0.0.7` byte for
+  byte: the split files and the content hash `b53afa42…` are identical. Its test
+  split is byte-identical to v0.0.6's, and train and validation answers carry
+  `reasoning` and a deciding-factor line.
 
 `make slice-clean` deletes the repository's `staging/` contents and
 `data/id_ledger.json`, so run it only in a fresh clone.
@@ -343,6 +346,7 @@ Every script accepts `--help`. Shared options and exit codes are listed in
 
 | Version | Date | Examples | Train / val / test | Families | Policies | Highlights |
 | --- | --- | ---: | --- | ---: | ---: | --- |
+| v0.0.7 | 2026-10-01 | 1,350 | 820 / 181 / 349 | 18 | 12 | Policy-derived reasoning traces and deciding-factor lines; test split identical to v0.0.6 |
 | v0.0.6 | 2026-09-04 | 1,350 | 820 / 181 / 349 | 18 | 12 | Relative close-call margin, split ask policies, stale-statement handling |
 | v0.0.5 | 2026-09-03 | 1,254 | 774 / 166 / 314 | 17 | 10 | 32 examples removed after human review |
 | v0.0.4 | 2026-09-01 | 1,286 | 793 / 169 / 324 | 17 | 10 | Difficulty derived from each policy |
@@ -351,10 +355,12 @@ Every script accepts `--help`. Shared options and exit codes are listed in
 | v0.0.1 | Not recorded | 150 | 90 / 10 / 50 | 7 | 6 | End-to-end pipeline test |
 
 Every release holds out the JSON input format for testing, uses split seed 42
-and contains only synthetic examples. v0.0.6 is the current release. Its
-approvals were recorded from the machine review's results and its human review
-sample has not been completed, so it is marked as a candidate. The
-[CHANGELOG](CHANGELOG.md) has the details and content hash of each release.
+and contains only synthetic examples. v0.0.7 is the latest release, and the
+published model results use v0.0.6. Neither has a completed human review, so both
+are marked as candidates. The [CHANGELOG](CHANGELOG.md) has the details and
+content hash of each release, and
+[docs/design/kleos-policy-v0.0.7.md](docs/design/kleos-policy-v0.0.7.md) records
+the v0.0.7 design.
 
 ## Project structure
 
@@ -392,7 +398,7 @@ make check
 | Target | Runs |
 | --- | --- |
 | `make check` | The repository secret scan, lint, format check, type check and tests |
-| `make test` | The test suite (1,165 tests) |
+| `make test` | The test suite (1,223 tests) |
 | `make lint`, `make typecheck` | Ruff and mypy |
 | `make scenarios` | Scenario catalog validation |
 | `make compat` | The kleos-models compatibility check. Requires `make install-compat`. |
@@ -422,6 +428,7 @@ make check
 | [docs/dataset-lifecycle.md](docs/dataset-lifecycle.md) | Splitting, holdouts, sealing, verification and versioning |
 | [docs/compatibility.md](docs/compatibility.md) | The mirrored kleos-models contract and its checks |
 | [docs/research-protocol.md](docs/research-protocol.md) | The research claim, falsification criteria and current status |
+| [docs/design/kleos-policy-v0.0.7.md](docs/design/kleos-policy-v0.0.7.md) | Design record for the v0.0.7 reasoning traces |
 | [docs/incident-response.md](docs/incident-response.md) | Runbooks for exposed secrets, personal data and consent problems |
 | [DATASET_CONTRACT.md](DATASET_CONTRACT.md) | The release format kleos-models expects |
 | [PRIVACY.md](PRIVACY.md) | The privacy policy, guarantees and limitations |

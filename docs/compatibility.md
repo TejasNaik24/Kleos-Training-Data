@@ -135,9 +135,8 @@ looser than upstream on this one point:
 - A benchmark built from the test split is unaffected, because `test.jsonl` carries
   no `reasoning`.
 
-When kleos-models adds the field, move the pin and record the new behaviour in
-`pin.py`. The differential `VALID_CASES` deliberately contain no `reasoning` until
-then.
+When kleos-models adds the field, move the pin and record the new behavior in
+`pin.py`. Until then, the differential `VALID_CASES` contain no `reasoning`.
 
 ## Known upstream issues
 

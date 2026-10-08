@@ -10,45 +10,20 @@ version.
 
 ## Pipeline
 
-`PIPELINE_VERSION` remained `0.1.0` through dataset releases v0.0.1 to v0.0.6.
+`PIPELINE_VERSION` remained `0.1.0` through dataset releases v0.0.1 to v0.0.7.
 Pipeline changes made for a dataset release are listed with that release.
 
 ### Unreleased
 
 #### Added
 
-- **Policy-derived reasoning traces.**
-  - Every policy now records the values it computed in a `Trace` on its `Decision`.
-    The trace is excluded from equality, so no decision changes.
-  - `scenarios/reasoning.py` renders the trace as step-by-step text ("shows its
-    math").
-  - The text travels in an optional assistant `reasoning` field. It is attached to
-    every non-`json` example and never to a `json` one.
-- **Contract:**
-  - `Message.reasoning` is assistant-only, non-empty when present, and written only
-    when present.
-  - Examples carrying it are schema `1.1` (`REASONING_SCHEMA_VERSION`). Examples
-    without it serialize exactly as before.
-  - Example ids hash `reasoning` when present.
-- **The field is carried and scanned end to end:**
-  - It travels through the capture request, normalization (mock-backend lane only),
-    the review packet and promotion.
-  - Detection, sanitization, the residue and vault checks, and the fact checks scan
-    it like `content`.
-- **Release acceptance checks:** `datasets/reasoning_checks.py` and
-  `scripts/check_reasoning_release.py`.
-- **Decision baseline fixtures:** `tests/fixtures/v006_decisions.json` and
-  `v006_json_ids.json`, with `scripts/snapshot_decisions.py`.
-- **Coverage report:** it now counts reasoning traces and their lengths.
 - MIT `LICENSE`.
 - `docs/scenarios.md`: scenario concepts, the catalog, the YAML field reference,
   the policy registry and an authoring guide.
+- `docs/design/kleos-policy-v0.0.7.md`: the design record for v0.0.7.
+- The KLEOS mark in the README header.
 
 #### Changed
-
-- **Every non-`json` answer now states its deciding factor on a
-  `What decided it: <label>.` line.** This includes declined answers, which name
-  the four decline labels the test split asks for.
 
 - Rewrote the README and all documentation, and corrected statements about
   promotion gate counts, configuration loading, review decision records and the
@@ -112,6 +87,46 @@ Issues found in kleos-models at the pinned commit are listed in
 [docs/compatibility.md](docs/compatibility.md#known-upstream-issues).
 
 ## Dataset releases
+
+### kleos-policy-v0.0.7 - 2026-10-01
+
+Reasoning release: 1,350 examples, the same examples and splits as v0.0.6.
+Splits: 820 train, 181 validation, 349 test. Content hash `b53afa4216bf6973`.
+`test.jsonl` is byte-identical to v0.0.6, and every decision is unchanged. The
+design is recorded in
+[docs/design/kleos-policy-v0.0.7.md](docs/design/kleos-policy-v0.0.7.md).
+
+#### Added
+
+- A policy-derived `reasoning` trace on all 1,001 training and validation
+  answers (median 560 characters, maximum 878). Every policy records the values
+  it computed in a `Trace` on its `Decision`, and `scenarios/reasoning.py`
+  renders it. The trace is excluded from decision equality.
+- An optional assistant `reasoning` field in the contract. It is non-empty when
+  present, written only when present, never used on JSON-format examples, and
+  included in the example ID. Examples that carry it are schema `1.1`; examples
+  without it serialize exactly as before.
+- The field is carried through capture, normalization (mock-backend lane only),
+  review packets and promotion, and every privacy, residue, vault and fact check
+  scans it like `content`.
+- Release acceptance checks in `datasets/reasoning_checks.py` and
+  `scripts/check_reasoning_release.py`.
+- Decision baseline fixtures (`tests/fixtures/v006_decisions.json`,
+  `tests/fixtures/v006_json_ids.json`) and `scripts/snapshot_decisions.py`.
+- The coverage report counts reasoning traces and their lengths.
+
+#### Changed
+
+- Every non-JSON answer ends with a `What decided it: <label>.` line, including
+  declined answers. Training and validation now contain every decline label the
+  test split uses: `request_ambiguous` (60), `stale_explicit_conflict` (44),
+  `missing_input` (30) and `insufficient_separation` (26).
+
+Two known issues remain. `insufficient_separation` has 4 validation examples,
+below the target of 5. kleos-models at the pinned contract commit does not yet
+accept `reasoning`, so `check_contract_compat.py --release` fails its loader
+check on this release (see
+[docs/compatibility.md](docs/compatibility.md#pending-upstream-change)).
 
 ### kleos-policy-v0.0.6 - 2026-09-04
 

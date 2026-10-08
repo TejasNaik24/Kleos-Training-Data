@@ -18,7 +18,7 @@ project keeps credentials and personal data out of the repository.
 | Version | Supported |
 | --- | --- |
 | The `main` branch | Yes |
-| The latest dataset release, `kleos-policy-v0.0.6` | Yes |
+| The latest dataset release, `kleos-policy-v0.0.7` | Yes |
 | Earlier dataset releases | No. Releases are immutable, so fixes ship in a new version. |
 
 ## Reporting a vulnerability
