@@ -37,6 +37,19 @@ Pipeline changes made for a dataset release are listed with that release.
 - `validate_scenarios.py` suggests `capture_backend.py` as the next step, and
   the private-data scanner's failure message was reworded.
 
+#### Security
+
+- `verify_release.py` rejects manifest and `RELEASE.lock` entries that are not
+  plain file names inside the release, so a crafted release cannot make the
+  verifier probe files elsewhere on disk.
+- `sanitize_candidates.py` and `promote_examples.py` refuse to run when the vault
+  directory is accessible beyond its owner.
+- The private-data scanner skips the runtime zones only at the repository root. A
+  directory with the same name elsewhere, such as `tests/staging/`, is scanned.
+- `make slice-clean` refuses an empty `SLICE_VERSION` or one containing a path
+  separator.
+- `.gitignore` covers `.claude/` and `.superpowers/`.
+
 #### Fixed
 
 - The contract-compatibility CI job failed because a reasoning test imports

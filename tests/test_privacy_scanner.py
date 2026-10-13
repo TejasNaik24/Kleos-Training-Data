@@ -238,6 +238,14 @@ class TestVirtualenvDetection:
         assert "src/app.py" in scanned
         assert not any(s.startswith(("staging/", "vault/")) for s in scanned)
 
+    def test_a_zone_name_below_the_root_is_still_scanned(self, tmp_path) -> None:
+        touch(tmp_path, "tests/staging/fixture.json", "{}")
+        touch(tmp_path, "docs/reports/notes.md", "x\n")
+        touch(tmp_path, "staging/raw/cap.json", "{}")
+        scanned = {str(p.relative_to(tmp_path)) for p in scanner._iter_files(tmp_path)}
+        assert {"tests/staging/fixture.json", "docs/reports/notes.md"} <= scanned
+        assert "staging/raw/cap.json" not in scanned
+
 
 class TestExitCodes:
     def test_a_clean_tree_exits_zero(self, tmp_path) -> None:

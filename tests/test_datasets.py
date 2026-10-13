@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import stat
 
@@ -467,6 +468,40 @@ class TestVerification:
         (sealed.path / "manifest.json").unlink()
         report = verify_release(sealed.path)
         assert any("manifest.json is missing" in p for p in report.problems)
+
+    @pytest.mark.parametrize("key", ["../outside.txt", "{absolute}"])
+    def test_a_manifest_path_outside_the_release_is_never_read(self, sealed, key: str) -> None:
+        outside = sealed.path.parent / "outside.txt"
+        outside.write_text("content the verifier must not read\n", encoding="utf-8")
+        outside_hash = hashlib.sha256(outside.read_bytes()).hexdigest()
+        key = key.format(absolute=outside)
+        manifest_path = sealed.path / "manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["file_hashes"][key] = "0" * 64
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+        report = verify_release(sealed.path)
+
+        rendered = "\n".join(report.problems + report.warnings)
+        assert "not a file name inside the release" in rendered
+        assert outside_hash[:12] not in rendered
+        assert not any("outside.txt" in p and "missing" in p for p in report.problems)
+
+    def test_a_lock_path_outside_the_release_is_never_read(self, sealed) -> None:
+        outside = sealed.path.parent / "outside.txt"
+        outside.write_text("secret\n", encoding="utf-8")
+        lock_path = sealed.path / "RELEASE.lock"
+        lock = json.loads(lock_path.read_text(encoding="utf-8"))
+        lock["all_file_hashes"]["../outside.txt"] = "0" * 64
+        lock_path.write_text(json.dumps(lock), encoding="utf-8")
+
+        report = verify_release(sealed.path)
+
+        assert any(
+            "RELEASE.lock names '../outside.txt', which is not a file name" in p
+            for p in report.problems
+        )
+        assert not any("outside.txt has changed" in p for p in report.problems)
 
     def test_a_missing_train_split_is_caught(self, sealed) -> None:
         (sealed.path / "train.jsonl").unlink()

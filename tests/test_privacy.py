@@ -248,6 +248,26 @@ class TestVault:
         assert not stat.S_IMODE(path.stat().st_mode) & 0o077
         assert EntityVault.load(path).entries == vault.entries
 
+    def test_a_vault_open_to_others_is_refused(self, tmp_path) -> None:
+        from kleos_training_data.errors import WorkspaceError
+        from kleos_training_data.paths import Workspace
+
+        workspace = Workspace.from_env(tmp_path)
+        workspace.vault.mkdir(parents=True)
+        workspace.vault.chmod(0o755)
+        with pytest.raises(WorkspaceError, match="accessible beyond its owner"):
+            workspace.assert_vault_secure()
+
+        workspace.vault.chmod(0o700)
+        workspace.assert_vault_secure()
+
+    @pytest.mark.parametrize("script", ["sanitize_candidates.py", "promote_examples.py"])
+    def test_scripts_that_use_the_vault_check_its_permissions(self, script: str) -> None:
+        from tests.conftest import REPO_ROOT
+
+        source = (REPO_ROOT / "scripts" / script).read_text(encoding="utf-8")
+        assert "workspace.assert_vault_secure()" in source
+
     def test_an_absent_vault_loads_empty(self, tmp_path) -> None:
         assert len(EntityVault.load(tmp_path / "absent.json")) == 0
 

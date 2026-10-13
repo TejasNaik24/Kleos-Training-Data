@@ -95,12 +95,10 @@ SKIP_DIRECTORIES = frozenset(
         ".eggs",
         "htmlcov",
         "site-packages",
-        "staging",
-        "vault",
-        "releases",
-        "reports",
     }
 )
+
+ZONE_DIRECTORIES = frozenset({"staging", "vault", "releases", "reports"})
 
 
 def _virtualenv_roots(root: Path) -> set[Path]:
@@ -202,7 +200,8 @@ def _iter_files(root: Path, paths: list[Path] | None = None):
     for path in root.rglob("*"):
         if not path.is_file():
             continue
-        if any(part in SKIP_DIRECTORIES for part in path.parts):
+        relative = path.relative_to(root).parts
+        if relative[0] in ZONE_DIRECTORIES or any(part in SKIP_DIRECTORIES for part in relative):
             continue
         if path.suffix.lower() in SKIP_SUFFIXES:
             continue

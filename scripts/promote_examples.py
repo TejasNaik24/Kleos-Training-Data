@@ -96,6 +96,7 @@ def main(argv: list[str] | None = None) -> int:
 
     workspace = Workspace.from_env(args.workspace)
     workspace.assert_initialized()
+    workspace.assert_vault_secure()
 
     policy = (
         PromotionPolicy.forced(

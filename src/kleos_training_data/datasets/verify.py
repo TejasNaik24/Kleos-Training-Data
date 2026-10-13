@@ -56,6 +56,10 @@ class VerificationReport:
         }
 
 
+def _is_member_name(filename: str) -> bool:
+    return filename not in {"", ".", ".."} and Path(filename).name == filename
+
+
 def verify_release(directory: Path | str, *, strict: bool = False) -> VerificationReport:
     path = Path(directory)
     report = VerificationReport(version=path.name, path=path)
@@ -183,6 +187,9 @@ def verify_release(directory: Path | str, *, strict: bool = False) -> Verificati
 
     for filename, claimed_hash in sorted(manifest.file_hashes.items()):
         report.checks_run += 1
+        if not _is_member_name(filename):
+            report.add(f"manifest hashes {filename!r}, which is not a file name inside the release")
+            continue
         target = path / filename
         if not target.is_file():
             report.add(f"manifest hashes {filename}, which is missing")
@@ -206,6 +213,11 @@ def verify_release(directory: Path | str, *, strict: bool = False) -> Verificati
             report.add("RELEASE.lock content_hash disagrees with the manifest")
         for filename, claimed in sorted((lock.get("all_file_hashes") or {}).items()):
             report.checks_run += 1
+            if not _is_member_name(filename):
+                report.add(
+                    f"RELEASE.lock names {filename!r}, which is not a file name inside the release"
+                )
+                continue
             target = path / filename
             if not target.is_file():
                 report.add(f"RELEASE.lock names {filename}, which is missing")
@@ -220,6 +232,8 @@ def verify_release(directory: Path | str, *, strict: bool = False) -> Verificati
         )
 
     for filename in sorted(manifest.file_hashes):
+        if not _is_member_name(filename):
+            continue
         target = path / filename
         if not target.is_file():
             continue

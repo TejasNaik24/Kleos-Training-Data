@@ -30,7 +30,7 @@ training ([results and caveats](#results)).
 
 | Examples | Tasks | Scenario families | Decision policies | Promotion gates | Tests |
 | :---: | :---: | :---: | :---: | :---: | :---: |
-| 1,350 | 7 | 18 | 12 | 14 | 1,223 |
+| 1,350 | 7 | 18 | 12 | 14 | 1,230 |
 
 ## Contents
 
@@ -224,7 +224,7 @@ The record format is specified in [DATASET_CONTRACT.md](DATASET_CONTRACT.md).
 | Scenario catalog | [![YAML](https://img.shields.io/badge/YAML-PyYAML-CB171E?logo=yaml&logoColor=white)](https://pyyaml.org/) |
 | Backend capture (optional) | [![HTTPX](https://img.shields.io/badge/HTTPX-client-3D4F5C)](https://www.python-httpx.org/) |
 | Machine review (optional) | [![Anthropic](https://img.shields.io/badge/Anthropic-SDK-191919?logo=anthropic&logoColor=white)](https://github.com/anthropics/anthropic-sdk-python) |
-| Testing | [![pytest](https://img.shields.io/badge/pytest-1%2C223%20tests-0A9EDC?logo=pytest&logoColor=white)](https://docs.pytest.org/) |
+| Testing | [![pytest](https://img.shields.io/badge/pytest-1%2C230%20tests-0A9EDC?logo=pytest&logoColor=white)](https://docs.pytest.org/) |
 | Linting, formatting and type checking | Ruff and mypy |
 | Continuous integration | [![GitHub Actions](https://img.shields.io/badge/GitHub%20Actions-7%20jobs-2088FF?logo=githubactions&logoColor=white)](.github/workflows/ci.yml) |
 | Build and task running | Hatchling and [![Make](https://img.shields.io/badge/Make-tasks-6D00CC?logo=make&logoColor=white)](Makefile) |
@@ -399,7 +399,7 @@ make check
 | Target | Runs |
 | --- | --- |
 | `make check` | The repository secret scan, lint, format check, type check and tests |
-| `make test` | The test suite (1,223 tests) |
+| `make test` | The test suite (1,230 tests) |
 | `make lint`, `make typecheck` | Ruff and mypy |
 | `make scenarios` | Scenario catalog validation |
 | `make compat` | The kleos-models compatibility check. Requires `make install-compat`. |

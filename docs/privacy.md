@@ -30,7 +30,9 @@ fact checks treat `reasoning` exactly like `content`. Where two detections overl
 span, then the earlier one.
 
 The entity vault lives in `vault/entity_vault.json`. The file is written with
-mode 0600, the `vault/` directory is 0700, and both are git-ignored. Entries are
+mode 0600, the `vault/` directory is 0700, and both are git-ignored.
+`sanitize_candidates.py` and `promote_examples.py` refuse to run if the directory
+is accessible beyond its owner. Entries are
 added through standard input so that a real name never appears in shell history:
 
 ```bash

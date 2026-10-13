@@ -72,6 +72,7 @@ def main(argv: list[str] | None = None) -> int:
 
     workspace = Workspace.from_env(args.workspace)
     workspace.assert_initialized()
+    workspace.assert_vault_secure()
 
     if args.add_vault_entry:
         return _add_vault_entry(workspace, args.add_vault_entry)

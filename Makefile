@@ -81,6 +81,7 @@ EVAL_FIXTURES ?= $(KLEOS_MODELS_PATH)/data/examples/synthetic_eval.jsonl
 
 .PHONY: slice-clean
 slice-clean:
+	@case "$(SLICE_VERSION)" in ""|.|..|*/*) echo "SLICE_VERSION must be a plain release name" >&2; exit 2;; esac
 	chmod -R u+w releases/$(SLICE_VERSION) 2>/dev/null || true
 	rm -rf releases/$(SLICE_VERSION)
 	rm -rf staging/raw staging/normalized staging/sanitized staging/review \
